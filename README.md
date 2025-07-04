@@ -1,77 +1,52 @@
-Here is the best discord bot that is made to bring discord a new economy system for all servers!
+<h1 align="center">
 
-You need to go to the release, download the zip file and uncompress it to the folder you want to the bot for working.
+  [CoinBot](https://discord.com/oauth2/authorize?client_id=1387445776854290533&permissions=824636869632&integration_type=0&scope=bot) - Discord's best economy bot!
+  <img src="logo.png" height="300">
+</h1>
+  <br><br>
 
-You must have the NodeJS in your machine and run the index.js file using node.
+--------
 
-This bot was create in a windows pc, if something doesn't work, you should re-install the dependencies using those commands on the prompt:
+# :memo: Requirements
 
-npm init -y
+  - [Node.JS](https://nodejs.org/en/download/)
+  - [Git](https://git-scm.com/downloads)
 
-npm install discord.js dotenv better-sqlite3
+# :computer: Install instructions
 
-npm install -D nodemon
+  1. Clone this repository
+   ```
+   git clone https://github.com/FoxUshiha/DC-Coin-Bot
+   cd DC-coin-bot
+   ```
+  
+  2. Install dependecies
+  ```
+  npm install
+  ```
 
-also, create a file called: package.json
+  3. Create a application
+       - Go to https://discord.com/developers/applications/
+       - Create an application
+       - In the OAuth2 section copy your client id
+       - Still in the OAuth2 section, mark the `bot` check and scroll down to Bot Permissions and check `Send Messages` and scroll down again to get its link
+       - In the bot section click on `RESET TOKEN` and copy it
 
-Inside this file, put that code:
+  4. Paste the token
+       - Go to the .env file and paste your token and ID like this
+        ```
+          DISCORD_TOKEN=YOUR_BOT_TOKEN
+          CLIENT_ID=YOUR_CLIENT_ID
+        ```
 
-"scripts": {
-  "start": "node index.js",
-  "dev":   "nodemon index.js"
-}
+  5. Start the bot
+      ```
+        npm start
+      ```
 
-And now you should be able to use the bot!
+------
+<h1 align="center">
 
-But to make sure that the bot will work, you will need to create it hahaha
+[![License: CC0-1.0](https://img.shields.io/badge/License-CC0%201.0-lightgrey.svg)](http://creativecommons.org/publicdomain/zero/1.0/)
 
-Go to the https://discord.com/developers/applications/
-
-Create an application and go to the bot section, create one, configure as you like and active the funcions called Intent (every intent function need to be on)!
-
-Now you should go to the bot, get the token by reseting it and coppying it and paste it in the file .env like that:
-
-DISCORD_TOKEN=MTM4NzdfhyMKSIENOABUFBIR.Giakofuibert.arfetyeryerqinweirbnuetbassndiwneortbt_tCE
-CLIENT_ID=1345678900012324
-
-Like that UwU
-
-But obviously you will need to edit with the informations of YOUR bot, not mine (the informations above are an example ._. obsviously they are not the true information of an real bot for u to use)
-
-The initial file cames like:
-
-DISCORD_TOKEN=YOUR_BOT_TOKEN
-CLIENT_ID=BOT_ID
-
-And you will need to change it U.U
-
-Bot finally, you will need to go to the OAuth2 part of the bot on the site and select "bot" scope and the permissions like "send messages" etc, and copy the bot invite link that discord will generate!
-
-You should put this link in the bot's description for everyone can use it to invite bot to their servers!
-
-Now, the bot is in your server if you clicked on the link or put it in the web browser...
-
-Now, you can run the bot using node js or any system that runs Java Scripts OwO
-
-Now, use my bot instead of creating your own!
-
-This page is only for you to help me creating things for the bot or improving the things that the bot already has! :3
-
-Click or use the links bellow to join us developing:
-
-https://discord.gg/NaPCZ68Jgn
-
-The oficial bot invite:
-
-https://discord.com/oauth2/authorize?client_id=1387445776854290533&permissions=824636869632&integration_type=0&scope=bot
-
-If you only want to use the bot instead of installing it on your server, click on the link bellow to install as a friend:
-
-https://discord.com/discovery/applications/1387445776854290533
-
-
-Subscribe to my channel: https://www.youtube.com/c/FoxUshiha
-
-And join in my Discord server:
-
-https://discord.gg/C3eYnYznaS
+</h1>
