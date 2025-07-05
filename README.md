@@ -23,6 +23,7 @@
   2. Install dependecies
   ```
   npm install
+  npm install discord.js sqlite3
   ```
 
   3. Create a application
