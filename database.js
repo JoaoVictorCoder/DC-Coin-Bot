@@ -1,6 +1,7 @@
 
 const path = require('path');
 const Database = require('better-sqlite3');
+const crypto = require('crypto');
 
 const db = new Database(path.join(__dirname, 'playerList', 'database.db'));
 
@@ -12,6 +13,32 @@ db.prepare(`
     notified INTEGER DEFAULT 0
   )
 `).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS servers (
+    server_id TEXT PRIMARY KEY,
+    api_channel TEXT
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS cards (
+    code TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    amount REAL NOT NULL
+  )
+`).run();
+
+// —— USERS ————————————————————————————————
 
 function getUser(id) {
   const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -48,7 +75,6 @@ function getCooldown(id) {
   return user.cooldown || 0;
 }
 
-// Retorna true se o usuário já foi notificado após o cooldown
 function wasNotified(id) {
   const user = getUser(id);
   return Boolean(user.notified);
@@ -58,7 +84,89 @@ function getAllUsers() {
   return db.prepare('SELECT * FROM users').all();
 }
 
+// —— SERVERS (API CHANNEL) ——————————————————
+
+function setServerApiChannel(serverId, channelId) {
+  const stmt = db.prepare(`
+    INSERT INTO servers(server_id, api_channel)
+    VALUES(?,?)
+    ON CONFLICT(server_id) DO UPDATE SET api_channel=excluded.api_channel
+  `);
+  stmt.run(serverId, channelId);
+}
+
+function getServerApiChannel(serverId) {
+  const row = db.prepare('SELECT api_channel FROM servers WHERE server_id = ?')
+                .get(serverId);
+  return row?.api_channel || null;
+}
+
+// —— CARDS ——————————————————————————————
+
+function createCard(userId) {
+  // gera 12 chars alfanum
+  const code = crypto.randomBytes(6).toString('hex');
+  // remove cartão antigo desse user (se existir)
+  db.prepare('DELETE FROM cards WHERE owner_id = ?').run(userId);
+  db.prepare('INSERT INTO cards(code, owner_id) VALUES(?,?)').run(code, userId);
+  return code;
+}
+
+function resetCard(userId) {
+  return createCard(userId);
+}
+
+function getCardOwner(code) {
+  const row = db.prepare('SELECT owner_id FROM cards WHERE code = ?').get(code);
+  return row?.owner_id || null;
+}
+
+function deleteCard(code) {
+  db.prepare('DELETE FROM cards WHERE code = ?').run(code);
+}
+
+// se você precisar buscar por hash SHA256 em vez do código direto:
+function getCardOwnerByHash(hash) {
+  const rows = db.prepare('SELECT code, owner_id FROM cards').all();
+  for (const { code, owner_id } of rows) {
+    const h = crypto.createHash('sha256').update(code).digest('hex');
+    if (h === hash) return owner_id;
+  }
+  return null;
+}
+
+const fs = require('fs');
+const os = require('os');
+const { v4: uuidv4 } = require('uuid');  // instale: npm install uuid
+
+/**
+ * Cria e salva no banco uma transação, devolve o transactionID gerado.
+ */
+function createTransaction(fromId, toId, amount) {
+  const txId   = uuidv4();
+  const date   = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO transactions(id, date, from_id, to_id, amount)
+    VALUES(?,?,?,?,?)
+  `).run(txId, date, fromId, toId, amount);
+  return { txId, date };
+}
+
+/**
+ * Busca uma transação pelo ID.
+ */
+function getTransaction(txId) {
+  return db.prepare(`
+    SELECT * FROM transactions WHERE id = ?
+  `).get(txId);
+}
+
+// —— EXPORTS ——————————————————————————————
+
 module.exports = {
+  db,
+  createTransaction,
+  getTransaction,
   getUser,
   setCoins,
   addCoins,
@@ -66,5 +174,12 @@ module.exports = {
   setNotified,
   getCooldown,
   wasNotified,
-  getAllUsers
+  getAllUsers,
+  setServerApiChannel,
+  getServerApiChannel,
+  createCard,
+  resetCard,
+  getCardOwner,
+  deleteCard,
+  getCardOwnerByHash
 };
