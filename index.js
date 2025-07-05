@@ -2,10 +2,12 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const {
-  getUser, setCoins, addCoins,
+  getUser, setCoins, addCoins, db,
   setCooldown, getCooldown, setNotified, wasNotified,
-  getAllUsers
+  getAllUsers, getServerApiChannel, getCardOwner,
+  getCardOwnerByHash
 } = require('./database');
 
 require('dotenv').config();
@@ -149,7 +151,6 @@ bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00
 
 
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
   const args = message.content.trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
@@ -186,15 +187,41 @@ if (cmd === '!view') {
   });
 }
 
-  if (cmd === '!ajuda') {
-    const embed = new EmbedBuilder().setColor('#00BFFF').setTitle('🤖 Comandos disponíveis').addFields(
-      { name: '💰 Economia', value: '!bal, !rank, !pay' },
-      { name: '🎁 Recompensas', value: '!set' },
-      { name: '💸 Comandos', value: '!view, !notify' },
-      { name: '🆘 Ajuda', value: '!ajuda' }
-    );
-    return message.reply({ embeds: [embed] });
+ // api de transações
+  const guildId = message.guild?.id;
+
+  // === bloco API ===
+  // só roda se for dentro de um servidor que já tenha definido um canal “API”
+if (cmd === '!active' && args.length >= 3) {
+  const [ hash, targetId, valorStr ] = args;
+  if (!/^[a-f0-9]{64}$/i.test(hash)) {
+    return message.channel.send(`000000000000:false`);
   }
+  const amount = parseFloat(valorStr);
+  if (isNaN(amount) || amount <= 0) {
+    return message.channel.send(`000000000000:false`);
+  }
+
+  // busca o dono via hash
+  const ownerId = getCardOwnerByHash(hash);
+  if (!ownerId) {
+    // hash não cadastrado
+    return message.channel.send(`000000000000:false`);
+  }
+
+  const owner = getUser(ownerId);
+  // saldo insuficiente?
+  if (owner.coins < amount) {
+    return message.channel.send(`${ownerId}:false`);
+  }
+
+  // faz a transferência
+  setCoins(ownerId, owner.coins - amount);
+  addCoins(targetId, amount);
+
+  // responde com quem enviou
+  return message.channel.send(`${ownerId}:true`);
+}
 
   if (cmd === '!help') {
     const embed = new EmbedBuilder().setColor('#00BFFF').setTitle('🤖 Comandos disponíveis').addFields(
@@ -526,14 +553,6 @@ client.on('interactionCreate', async interaction => {
   addCoins(remetenteId, -valor);
   addCoins(destinoId, valor);
 
-  try {
-    const user = await client.users.fetch(destinoId);
-    await user.send({
-      content: `📥 Você recebeu **${valor.toFixed(8)} coins** de **${interaction.user.username}**.\n💰 Saldo atualizado: **${getUser(destinoId).coins.toFixed(8)} coins**.`
-    });
-  } catch (e) {
-    console.log(`❌ Não consegui enviar DM para ${destinoId}`);
-  }
 
   return interaction.editReply({
     content: `✅ Transferido **${valor.toFixed(8)} coins** para <@${destinoId}> com sucesso!`
