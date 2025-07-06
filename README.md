@@ -23,7 +23,7 @@
   2. Install dependecies
   ```
   npm install
-  npm install discord.js sqlite3
+  npm install discord.js sqlite3 p-queue uuid
   ```
 
   3. Create a application
