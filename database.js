@@ -1,55 +1,63 @@
-
-const path = require('path');
+const path     = require('path');
 const Database = require('better-sqlite3');
-const crypto = require('crypto');
+const crypto   = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 const db = new Database(path.join(__dirname, 'playerList', 'database.db'));
 
-db.prepare(`
+// 1) PRAGMAs
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+
+// 2) Criação inicial de tabelas
+db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    coins REAL DEFAULT 0,
+    id       TEXT PRIMARY KEY,
+    coins    REAL    DEFAULT 0,
     cooldown INTEGER DEFAULT 0,
     notified INTEGER DEFAULT 0
-  )
-`).run();
-
-db.prepare(`
+  );
   CREATE TABLE IF NOT EXISTS servers (
-    server_id TEXT PRIMARY KEY,
+    server_id   TEXT PRIMARY KEY,
     api_channel TEXT
-  )
-`).run();
-
-db.prepare(`
+  );
   CREATE TABLE IF NOT EXISTS cards (
-    code TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL
-  )
-`).run();
-
-db.prepare(`
+    code      TEXT PRIMARY KEY,
+    owner_id  TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS transactions (
-    id TEXT PRIMARY KEY,
-    date TEXT NOT NULL,
-    from_id TEXT NOT NULL,
-    to_id TEXT NOT NULL,
-    amount REAL NOT NULL
-  )
-`).run();
-
-db.prepare(`
+    id      TEXT PRIMARY KEY,
+    date    TEXT    NOT NULL,
+    from_id TEXT    NOT NULL,
+    to_id   TEXT    NOT NULL,
+    amount  REAL    NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS dm_queue (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    TEXT NOT NULL,
-    embed_json TEXT NOT NULL,
-    row_json   TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  )
-`).run();
+    user_id    TEXT    NOT NULL,
+    embed_json TEXT    NOT NULL,
+    row_json   TEXT    NOT NULL,
+    created_at INTEGER DEFAULT (strftime('%s','now'))
+  );
+`);
 
-// —— USERS ————————————————————————————————
+// 3) Migração: adiciona coluna card_hash se ainda não existir
+const cardCols = db.prepare(`PRAGMA table_info(cards)`).all().map(c => c.name);
+if (!cardCols.includes('card_hash')) {
+  db.exec(`ALTER TABLE cards ADD COLUMN card_hash TEXT;`);
+}
 
+// 4) Índices
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_id);
+  CREATE INDEX IF NOT EXISTS idx_transactions_to   ON transactions(to_id);
+  CREATE INDEX IF NOT EXISTS idx_users_coins       ON users(coins);
+  CREATE INDEX IF NOT EXISTS idx_cards_hash        ON cards(card_hash);
+`);
+
+// —— FUNÇÕES ——
+
+// — USERS —
 function getUser(id) {
   const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
   let user = stmt.get(id);
@@ -59,182 +67,128 @@ function getUser(id) {
   }
   return user;
 }
-
 function setCoins(id, amount) {
   getUser(id);
   db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(amount, id);
 }
-
 function addCoins(id, amount) {
   getUser(id);
   db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(amount, id);
 }
-
-function setCooldown(id, timestamp) {
+function setCooldown(id, ts) {
   getUser(id);
-  db.prepare('UPDATE users SET cooldown = ? WHERE id = ?').run(timestamp, id);
+  db.prepare('UPDATE users SET cooldown = ? WHERE id = ?').run(ts, id);
 }
-
-function setNotified(id, value) {
-  getUser(id);
-  db.prepare('UPDATE users SET notified = ? WHERE id = ?').run(value ? 1 : 0, id);
-}
-
 function getCooldown(id) {
-  const user = getUser(id);
-  return user.cooldown || 0;
+  return getUser(id).cooldown || 0;
 }
-
+function setNotified(id, flag) {
+  getUser(id);
+  db.prepare('UPDATE users SET notified = ? WHERE id = ?').run(flag ? 1 : 0, id);
+}
 function wasNotified(id) {
-  const user = getUser(id);
-  return Boolean(user.notified);
+  return Boolean(getUser(id).notified);
 }
-
 function getAllUsers() {
   return db.prepare('SELECT * FROM users').all();
 }
 
-// —— SERVERS (API CHANNEL) ——————————————————
-
+// — SERVERS —
 function setServerApiChannel(serverId, channelId) {
-  const stmt = db.prepare(`
+  db.prepare(`
     INSERT INTO servers(server_id, api_channel)
     VALUES(?,?)
     ON CONFLICT(server_id) DO UPDATE SET api_channel=excluded.api_channel
-  `);
-  stmt.run(serverId, channelId);
+  `).run(serverId, channelId);
 }
-
 function getServerApiChannel(serverId) {
   const row = db.prepare('SELECT api_channel FROM servers WHERE server_id = ?')
                 .get(serverId);
   return row?.api_channel || null;
 }
 
-// —— CARDS ——————————————————————————————
-
+// — CARDS —
 function createCard(userId) {
-  // gera 12 chars alfanum
   const code = crypto.randomBytes(6).toString('hex');
-  // remove cartão antigo desse user (se existir)
   db.prepare('DELETE FROM cards WHERE owner_id = ?').run(userId);
-  db.prepare('INSERT INTO cards(code, owner_id) VALUES(?,?)').run(code, userId);
+  db.prepare('INSERT INTO cards (code, owner_id) VALUES (?,?)').run(code, userId);
   return code;
 }
-
-function resetCard(userId) {
-  return createCard(userId);
-}
-
+function resetCard(userId) { return createCard(userId); }
 function getCardOwner(code) {
   const row = db.prepare('SELECT owner_id FROM cards WHERE code = ?').get(code);
   return row?.owner_id || null;
 }
-
 function deleteCard(code) {
   db.prepare('DELETE FROM cards WHERE code = ?').run(code);
 }
-
-// se você precisar buscar por hash SHA256 em vez do código direto:
 function getCardOwnerByHash(hash) {
   const rows = db.prepare('SELECT code, owner_id FROM cards').all();
   for (const { code, owner_id } of rows) {
-    const h = crypto.createHash('sha256').update(code).digest('hex');
-    if (h === hash) return owner_id;
+    if (crypto.createHash('sha256').update(code).digest('hex') === hash) {
+      return owner_id;
+    }
   }
   return null;
 }
 
-const fs = require('fs');
-const os = require('os');
-const { v4: uuidv4 } = require('uuid');  // instale: npm install uuid
-
-/**
- * Cria e salva no banco uma transação, devolve o transactionID gerado.
- */
+// — TRANSACTIONS —
 function createTransaction(fromId, toId, amount) {
-  const txId   = uuidv4();
-  const date   = new Date().toISOString();
+  const txId = uuidv4();
+  const date = new Date().toISOString();
   db.prepare(`
-    INSERT INTO transactions(id, date, from_id, to_id, amount)
-    VALUES(?,?,?,?,?)
+    INSERT INTO transactions (id, date, from_id, to_id, amount)
+    VALUES (?, ?, ?, ?, ?)
   `).run(txId, date, fromId, toId, amount);
   return { txId, date };
 }
-
-/**
- * Busca uma transação pelo ID.
- */
 function getTransaction(txId) {
-  return db.prepare(`
-    SELECT * FROM transactions WHERE id = ?
-  `).get(txId);
+  return db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId);
+}
+function genUniqueTxId() {
+  let id;
+  do {
+    id = uuidv4();
+  } while (db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id));
+  return id;
 }
 
-  /**
- * Enfileira uma DM: armazena o payload para envio posterior.
- */
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS dm_queue (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    TEXT NOT NULL,
-      embed_json TEXT NOT NULL,
-      row_json   TEXT NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    )
-  `).run();
-  
-  /**
-   * Armazena um job de DM na fila.
-   */
-  function enqueueDM(userId, embedObj, rowObj) {
-    const stmt = db.prepare(`
+// — DM QUEUE —
+function enqueueDM(userId, embedObj, rowObj) {
+  try {
+    db.prepare(`
       INSERT INTO dm_queue (user_id, embed_json, row_json)
       VALUES (?, ?, ?)
-    `);
-    stmt.run(userId, JSON.stringify(embedObj), JSON.stringify(rowObj));
+    `).run(userId, JSON.stringify(embedObj), JSON.stringify(rowObj));
+  } catch (err) {
+    console.error('❌ Failed to enqueue DM:', err);
   }
-  
-  /**
-   * Retorna o próximo job da fila (ou undefined se não houver).
-   */
-  function getNextDM() {
-    return db.prepare(`
-      SELECT * FROM dm_queue
-      ORDER BY id
-      LIMIT 1
-    `).get();
-  }
-  
-  /**
-   * Remove o job da fila, seja por sucesso ou erro.
-   */
-  function deleteDM(id) {
-    db.prepare(`DELETE FROM dm_queue WHERE id = ?`).run(id);
-  }
-
-// —— EXPORTS ——————————————————————————————
+}
+function getNextDM() {
+  return db.prepare(`
+    SELECT * FROM dm_queue
+    ORDER BY id
+    LIMIT 1
+  `).get();
+}
+function deleteDM(id) {
+  db.prepare('DELETE FROM dm_queue WHERE id = ?').run(id);
+}
 
 module.exports = {
   db,
-  createTransaction,
-  getTransaction,
-  getUser,
-  setCoins,
-  addCoins,
-  setCooldown,
-  setNotified,
-  getCooldown,
-  wasNotified,
+  // users
+  getUser, setCoins, addCoins,
+  getCooldown, setCooldown,
+  wasNotified, setNotified,
   getAllUsers,
-  setServerApiChannel,
-  getServerApiChannel,
-  createCard,
-  resetCard,
-  getCardOwner,
-  deleteCard,
-  enqueueDM,
-  getNextDM,
-  deleteDM,
-  getCardOwnerByHash
+  // servers
+  setServerApiChannel, getServerApiChannel,
+  // cards
+  createCard, resetCard, getCardOwner, deleteCard,
+  getCardOwnerByHash,
+  // transactions
+  createTransaction, getTransaction, genUniqueTxId,
+  // dm queue
+  enqueueDM, getNextDM, deleteDM
 };

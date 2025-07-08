@@ -4,54 +4,74 @@ const path = require('path');
 const { REST, Routes, Collection } = require('discord.js');
 
 /**
- * Carrega todos os arquivos de ./commands, popula client.commands
- * e registra (deploy) tanto globalmente quanto por guild imediatamente.
+ * Registers commands globally and per-guild via Discord REST API.
  *
- * @param {Client} client    - instância do Discord.js Client
- * @param {string} token     - DISCORD_TOKEN
- * @param {string} clientId  - CLIENT_ID
+ * @param {Array<Object>} commandsJSON - Array of command JSON definitions
+ * @param {string} token               - Your bot token
+ * @param {string} clientId            - Your application (client) ID
+ * @param {Array<string|Object>} guilds - Guilds to register commands for, either IDs or { id, name }
  */
-function setupCommands(client, token, clientId) {
-  // 1) Carrega comandos em client.commands
-  client.commands = new Collection();
-  const commands = [];
-  const commandsPath = path.join(__dirname, 'commands');
-  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-  for (const file of files) {
-    const command = require(path.join(commandsPath, file));
-    client.commands.set(command.data.name, command);
-    commands.push(command.data.toJSON());
-  }
-
-  // 2) Registra via REST
+async function deployCommands(commandsJSON, token, clientId, guilds = []) {
   const rest = new REST({ version: '10' }).setToken(token);
 
-  client.once('ready', async () => {
-    try {
-      console.log('🔄 Adding commands GLOBALLY...');
-      await rest.put(
-        Routes.applicationCommands(clientId),
-        { body: commands }
-      );
-      console.log('✅ Global commands added.');
+  // 1) Global
+  try {
+    console.log('🔄 Registering global commands...');
+    await rest.put(Routes.applicationCommands(clientId), { body: commandsJSON });
+    console.log('✅ Global commands registered.');
+  } catch (err) {
+    console.error('❌ Failed to register global commands:', err);
+  }
 
-      // Para cada guild onde o bot está, faz registro imediato
-      for (const guild of client.guilds.cache.values()) {
-        const guildId = guild.id;
-        try {
-          console.log(`🔄 Adding commands in guild ${guild.name} (${guildId})...`);
-          await rest.put(
-            Routes.applicationGuildCommands(clientId, guildId),
-            { body: commands }
-          );
-          console.log(`✅ Added commands in guild ${guild.name} (${guildId}).`);
-        } catch (err) {
-          console.error(`❌ Error while adding commands in guild ${guild.name} (${guildId}):`, err);
-        }
-      }
+  // 2) Per-guild
+  if (guilds.length > 0) {
+    await Promise.all(
+      guilds.map(g => {
+        const guildId = typeof g === 'string' ? g : g.id;
+        const guildName = typeof g === 'object' && g.name ? g.name : guildId;
+        return rest
+          .put(Routes.applicationGuildCommands(clientId, guildId), { body: commandsJSON })
+          .then(() => console.log(`✅ Commands registered for guild ${guildName} (${guildId})`))
+          .catch(err => console.error(`❌ Failed to register commands for guild ${guildName} (${guildId}):`, err));
+      })
+    );
+  }
+}
+
+/**
+ * Loads command modules from ./commands, populates client.commands,
+ * and triggers registration both globally and per-guild.
+ *
+ * @param {import('discord.js').Client} client
+ * @param {string} token    Your bot token
+ * @param {string} clientId Your application (client) ID
+ */
+function setupCommands(client, token, clientId) {
+  // 1) Load all commands
+  client.commands = new Collection();
+  const commandsJSON = [];
+  const commandsDir = path.join(__dirname, 'commands');
+  for (const file of fs.readdirSync(commandsDir).filter(f => f.endsWith('.js'))) {
+    try {
+      const command = require(path.join(commandsDir, file));
+      client.commands.set(command.data.name, command);
+      commandsJSON.push(command.data.toJSON());
     } catch (err) {
-      console.error('❌ Commands registration failure:', err);
+      console.error(`❌ Error loading command file ${file}:`, err);
     }
+  }
+
+  // 2) On ready, register globally and per existing guilds
+  client.once('ready', () => {
+    const guilds = Array.from(client.guilds.cache.values())
+      .map(g => ({ id: g.id, name: g.name }));
+    deployCommands(commandsJSON, token, clientId, guilds);
+  });
+
+  // 3) When joining a new guild, register there immediately
+  client.on('guildCreate', guild => {
+    console.log(`🔄 Joined new guild ${guild.name} (${guild.id}), registering commands...`);
+    deployCommands(commandsJSON, token, clientId, [{ id: guild.id, name: guild.name }]);
   });
 }
 
