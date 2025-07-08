@@ -1,14 +1,24 @@
-// pay.js
+// commands/pay.js
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
+const { v4: uuidv4 } = require('uuid');
 const {
   getUser,
   setCoins,
   addCoins,
-  createTransaction
+  db
 } = require('../database');
+
+// helper para gerar UUID único
+function genUniqueTxId() {
+  let id;
+  do {
+    id = uuidv4();
+  } while (db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id));
+  return id;
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,69 +36,89 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const target = interaction.options.getUser('usuário');
-    const amount = interaction.options.getNumber('quantia');
+    // Defer reply ephemerally to avoid timeout
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    if (target.id === interaction.user.id) {
-      return interaction.reply({ content: '🚫 Impossible to send to yourself.', ephemeral: true });
-    }
-
-    const sender = getUser(interaction.user.id);
-    if (sender.coins < amount) {
-      return interaction.reply({ content: '💸 Insufficient funds.', ephemeral: true });
-    }
-
-    // Atualiza saldos
-    setCoins(interaction.user.id, sender.coins - amount);
-    addCoins(target.id, amount);
-
-    // Registra transação para o sender
-    const { txId, date } = createTransaction(
-      interaction.user.id,
-      target.id,
-      amount
-    );
-
-    // Registra também para o receiver, mantendo from→to na mesma ordem
-    createTransaction(
-      interaction.user.id,
-      target.id,
-      amount
-    );
-
-    // Prepara comprovante para o sender
-    const tempDir = path.join(__dirname, '..', 'temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-    const filePath = path.join(tempDir, `${interaction.user.id}-${txId}.txt`);
-    const content = [
-      `Transaction ID: ${txId}`,
-      `Date         : ${date}`,
-      `From         : ${interaction.user.id}`,
-      `To           : ${target.id}`,
-      `Amount       : ${amount.toFixed(8)} coins`
-    ].join(os.EOL);
-    fs.writeFileSync(filePath, content);
-
-    // Tenta enviar o anexo, mas não crasha se falhar
-    let files = [];
     try {
-      files = [ new AttachmentBuilder(filePath, { name: `${interaction.user.id}-${txId}.txt` }) ];
-    } catch (err) {
-      console.warn('⚠️ No permission to send files:', err);
-    }
+      const target = interaction.options.getUser('usuário');
+      const amount = interaction.options.getNumber('quantia');
 
-    // Responde ao usuário que pagou
-    try {
-      await interaction.reply({
+      if (target.id === interaction.user.id) {
+        return interaction.editReply('🚫 Impossible to send to yourself.');
+      }
+      if (isNaN(amount) || amount <= 0) {
+        return interaction.editReply('❌ Invalid amount specified.');
+      }
+
+      const sender = getUser(interaction.user.id);
+      if (sender.coins < amount) {
+        return interaction.editReply('💸 Insufficient funds.');
+      }
+
+      // Update balances
+      setCoins(interaction.user.id, sender.coins - amount);
+      addCoins(target.id, amount);
+
+      // Record transactions
+      const date = new Date().toISOString();
+      const txIdSender   = genUniqueTxId();
+      const txIdReceiver = genUniqueTxId();
+      const insertStmt = db.prepare(`
+        INSERT INTO transactions(id, date, from_id, to_id, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      try {
+        insertStmt.run(txIdSender, date, interaction.user.id, target.id, amount);
+        insertStmt.run(txIdReceiver, date, interaction.user.id, target.id, amount);
+      } catch (e) {
+        console.warn('⚠️ Failed to log transactions:', e);
+      }
+
+      // Prepare receipt file
+      const tempDir = path.join(__dirname, '..', 'temp');
+      fs.mkdirSync(tempDir, { recursive: true });
+      const filePath = path.join(tempDir, `${interaction.user.id}-${txIdSender}.txt`);
+      const content = [
+        `Transaction ID: ${txIdSender}`,
+        `Date         : ${date}`,
+        `From         : ${interaction.user.id}`,
+        `To           : ${target.id}`,
+        `Amount       : ${amount.toFixed(8)} coins`
+      ].join(os.EOL);
+      fs.writeFileSync(filePath, content, 'utf8');
+
+      // Attempt to attach receipt
+      let files = [];
+      try {
+        files = [ new AttachmentBuilder(filePath, { name: `${interaction.user.id}-${txIdSender}.txt` }) ];
+      } catch (e) {
+        console.warn('⚠️ Cannot attach file:', e);
+      }
+
+      // Reply to sender
+      await interaction.editReply({
         content: `✅ Transferred **${amount.toFixed(8)} coins** to **${target.tag}**.`,
-        files,
-        ephemeral: true
+        files
       });
     } catch (err) {
-      console.error('❌ No permission to reply /pay:', err);
+      console.error('❌ Error in /pay command:', err);
+      try {
+        if (!interaction.replied) {
+          await interaction.reply({ content: '❌ Internal error processing /pay.', ephemeral: true });
+        } else {
+          await interaction.editReply('❌ Internal error processing /pay.');
+        }
+      } catch {}
+    } finally {
+      // Cleanup any temp files
+      try {
+        const tempDir = path.join(__dirname, '..', 'temp');
+        fs.readdirSync(tempDir).forEach(file => {
+          if (file.startsWith(`${interaction.user.id}-`) && file.endsWith('.txt')) {
+            fs.unlinkSync(path.join(tempDir, file));
+          }
+        });
+      } catch {}
     }
-
-    // Limpa o arquivo temporário
-    try { fs.unlinkSync(filePath); } catch {}
   }
 };

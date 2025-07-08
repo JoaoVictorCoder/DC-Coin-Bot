@@ -1,4 +1,4 @@
-
+// commands/history.js
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
@@ -10,116 +10,134 @@ module.exports = {
     .setName('history')
     .setDescription('See the transaction history')
     .addStringOption(opt =>
-      opt.setName('user_id')
-         .setDescription('User ID (default: YOU)')
+      opt.setName('user')
+         .setDescription('User mention or ID (default: you)')
          .setRequired(false)
     )
     .addIntegerOption(opt =>
       opt.setName('page')
-         .setDescription('History page (100 transactions each one)')
+         .setDescription('Page number (100 entries per page)')
          .setRequired(false)
     ),
 
   async execute(interaction) {
-    // Defer para extender tempo de resposta (ephemeral)
-    await interaction.deferReply({ flags: 64 });
+    // 1️⃣ Defer ephemerally to avoid timeout
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    // Parâmetros
-    const requestedId = interaction.options.getString('user_id') || interaction.user.id;
-    let page = interaction.options.getInteger('page') || 1;
-
-    // Verifica existência do usuário no DB
-    const userRow = getUser(requestedId);
-    if (!userRow) {
-      return interaction.editReply({ content: '❌Unknown User❌', flags: 64 });
-    }
-
-    // Conta total de transações (enviadas ou recebidas)
-    const countStmt = db.prepare(
-      `SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = ? OR to_id = ?`
-    );
-    const { cnt: totalCount } = countStmt.get(requestedId, requestedId);
-
-    // Define paginação
-    const perPage = 100;
-    const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
-    if (page > maxPage) page = maxPage;
-
-    // Busca username (ou 'unknown')
-    let name;
     try {
-      const userObj = await interaction.client.users.fetch(requestedId);
-      name = userObj.username;
-    } catch {
-      name = 'unknown';
-    }
+      // 2️⃣ Parse inputs
+      let requestedId = interaction.options.getString('user') || interaction.user.id;
+      const mention = requestedId.match(/^<@!?(?<id>\d+)>$/);
+      if (mention) requestedId = mention.groups.id;
+      const pageArg = interaction.options.getInteger('page');
+      const perPage = 100;
+      let page = pageArg && pageArg > 0 ? pageArg : 1;
 
-    // Monta cabeçalho
-    const header = [];
-    if (interaction.options.getInteger('page') > maxPage) {
-      header.push(`⚠️📖 Showing latest page: ${maxPage}`);
-    }
-    header.push(`🔄User: ${name} (${requestedId})`);
-    header.push(`⏱️Transactions: ${totalCount}`);
-    header.push(`💸Balance: ${userRow.coins.toFixed(8)} coins`);
-    header.push(`📖Page: ${page}`);
+      // 3️⃣ Fetch and validate user record
+      let userRow;
+      try {
+        userRow = getUser(requestedId);
+      } catch (e) {
+        console.error('❌ [/history] getUser error:', e);
+        return interaction.editReply('❌ Unknown user.').catch(() => null);
+      }
 
-    // Se não houver transações
-    if (totalCount === 0) {
-      return interaction.editReply({
-        content: header.concat('⚠️No Transactions⚠️').join('\n'),
-        flags: 64
-      });
-    }
+      // 4️⃣ Deduplicate this user's transactions (best effort)
+      try {
+        db.prepare(`
+          DELETE FROM transactions
+          WHERE rowid NOT IN (
+            SELECT MIN(rowid)
+            FROM transactions
+            WHERE from_id = ? OR to_id = ?
+            GROUP BY date, amount, from_id, to_id
+          )
+          AND (from_id = ? OR to_id = ?)
+        `).run(requestedId, requestedId, requestedId, requestedId);
+      } catch (e) {
+        console.warn('⚠️ [/history] dedupe failed:', e);
+      }
 
-    // Busca transações da página
-    const offset = (page - 1) * perPage;
-    const txStmt = db.prepare(
-      `SELECT * FROM transactions
-       WHERE from_id = ? OR to_id = ?
-       ORDER BY date DESC
-       LIMIT ? OFFSET ?`
-    );
-    const transactions = txStmt.all(requestedId, requestedId, perPage, offset);
+      // 5️⃣ Count total transactions
+      const { cnt: totalCount } = db.prepare(`
+        SELECT COUNT(*) AS cnt
+        FROM transactions
+        WHERE from_id = ? OR to_id = ?
+      `).get(requestedId, requestedId);
 
-    // Monta conteúdo do TXT
-    const blocks = transactions.map(tx => [
-      `UUID:    ${tx.id}`,
-      `AMOUNT:  ${tx.amount.toFixed(8)} coins`,
-      `FROM:    ${tx.from_id}`,
-      `TO:      ${tx.to_id}`,
-      `Date:    ${tx.date}`
-    ].join(os.EOL));
-    const content = blocks.join(os.EOL + os.EOL);
+      const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
+      if (page > maxPage) page = maxPage;
 
-    // Grava arquivo temporário
-    const tempDir = path.join(__dirname, '..', 'temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-    const fileName = `${requestedId}_history_${page}.txt`;
-    const filePath = path.join(tempDir, fileName);
-    fs.writeFileSync(filePath, content);
+      // 6️⃣ Fetch display name
+      let username = requestedId;
+      try {
+        const u = await interaction.client.users.fetch(requestedId);
+        username = u.username;
+      } catch {}
 
-    // Prepara attachment
-    let files;
-    try {
-      const attachment = new AttachmentBuilder(filePath, { name: fileName });
-      files = [attachment];
-    } catch {
-      files = null;
-    }
+      // 7️⃣ Build header
+      const header = [];
+      if (pageArg > maxPage) header.push(`⚠️ Showing latest page: ${maxPage}`);
+      header.push(`🔄 User: ${username} (\`${requestedId}\`)`);
+      header.push(`⏱️ Transactions: ${totalCount}`);
+      header.push(`💸 Balance: ${userRow.coins.toFixed(8)} coins`);
+      header.push(`📖 Page: ${page}/${maxPage}`);
 
-    // Envia resposta final
-    try {
-      const replyPayload = { content: header.join('\n'), flags: 64 };
-      if (files) replyPayload.files = files;
-      else replyPayload.content += `\n⚠️Can't send the transaction history report. Try in my DM <@${interaction.client.user.id}>⚠️`;
+      if (totalCount === 0) {
+        return interaction.editReply({ content: header.concat('⚠️ No Transactions ⚠️').join('\n') });
+      }
 
+      // 8️⃣ Retrieve this page of transactions
+      const offset = (page - 1) * perPage;
+      const transactions = db.prepare(`
+        SELECT * FROM transactions
+        WHERE from_id = ? OR to_id = ?
+        ORDER BY date DESC
+        LIMIT ? OFFSET ?
+      `).all(requestedId, requestedId, perPage, offset);
+
+      // 9️⃣ Build text blocks
+      const blocks = transactions.map(tx => [
+        `UUID:   ${tx.id}`,
+        `AMOUNT: ${tx.amount.toFixed(8)} coins`,
+        `FROM:   ${tx.from_id}`,
+        `TO:     ${tx.to_id}`,
+        `DATE:   ${tx.date}`
+      ].join(os.EOL));
+      const content = blocks.join(os.EOL + os.EOL);
+
+      // 🔟 Write temp file
+      const tempDir = path.join(__dirname, '..', 'temp');
+      fs.mkdirSync(tempDir, { recursive: true });
+      const fileName = `${requestedId}_history_${page}.txt`;
+      const filePath = path.join(tempDir, fileName);
+      fs.writeFileSync(filePath, content, 'utf8');
+
+      // 1️⃣1️⃣ Prepare attachment
+      let attachment;
+      try {
+        attachment = new AttachmentBuilder(filePath, { name: fileName });
+      } catch (e) {
+        console.warn('⚠️ [/history] attachment creation failed:', e);
+      }
+
+      // 1️⃣2️⃣ Send the reply
+      const replyPayload = { content: header.join('\n') };
+      if (attachment) replyPayload.files = [attachment];
       await interaction.editReply(replyPayload);
+
+      // 1️⃣3️⃣ Clean up temp file
+      fs.unlinkSync(filePath);
     } catch (err) {
-      console.error(`❌Can't send messages in the channel: ${interaction.channelId} of ${interaction.guild?.name || 'DM'} (${interaction.guildId})`);
-    } finally {
-      // Remove o arquivo
-      try { fs.unlinkSync(filePath); } catch {}
+      console.error('❌ Error in /history command:', err);
+      // Fallback error reply
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ Could not retrieve history.', ephemeral: true });
+        } else {
+          await interaction.editReply('❌ Could not retrieve history.');
+        }
+      } catch {}
     }
   },
 };

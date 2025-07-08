@@ -1,4 +1,4 @@
-
+// commands/check.js
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
@@ -16,18 +16,32 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const txId = interaction.options.getString('txid');
-    const tx   = getTransaction(txId);
+    // 1) Adia para dar tempo extra (resposta será ephemeral)
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    if (!tx) {
-      return interaction.reply({ content: '❌ Unknown transaction.', ephemeral: true });
+    const txId = interaction.options.getString('txid');
+    let tx;
+    try {
+      tx = getTransaction(txId);
+    } catch (err) {
+      console.error('❌ [/check] Erro ao buscar transação:', err);
+      return interaction.editReply('❌ Erro interno ao recuperar a transação.').catch(() => null);
     }
 
-    // Recria o arquivo de comprovante temporário
-    const tempDir = path.join(__dirname, '..', 'temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-    const filePath = path.join(tempDir, `${txId}.txt`);
+    if (!tx) {
+      return interaction.editReply('❌ Transação desconhecida.').catch(() => null);
+    }
 
+    // 2) Prepara diretório temporário
+    const tempDir = path.join(__dirname, '..', 'temp');
+    try {
+      fs.mkdirSync(tempDir, { recursive: true });
+    } catch (err) {
+      console.warn('⚠️ [/check] Falha ao criar pasta temp:', err);
+    }
+
+    // 3) Escreve conteúdo no arquivo
+    const filePath = path.join(tempDir, `${txId}.txt`);
     const content = [
       `Transaction ID: ${txId}`,
       `Date         : ${tx.date}`,
@@ -36,26 +50,42 @@ module.exports = {
       `Amount       : ${tx.amount.toFixed(8)} coins`
     ].join(os.EOL);
 
-    fs.writeFileSync(filePath, content);
-
-    // Prepara o attachment
-    let attachment;
     try {
-      attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
+      fs.writeFileSync(filePath, content, 'utf8');
     } catch (err) {
-      console.warn('⚠️ Sem permissão para anexar comprovante de verificação:', err.message);
+      console.warn('⚠️ [/check] Falha ao escrever arquivo de transação:', err);
     }
 
-    // Envia resposta ephemeral com arquivo
-    const replyPayload = {
-      content: `✅ Transaction: (${tx.date}) from \`${tx.from_id}\` to \`${tx.to_id}\` of \`${tx.amount.toFixed(8)}\` coins.`,
-      ephemeral: true
+    // 4) Cria attachment, se possível
+    let attachment;
+    if (fs.existsSync(filePath)) {
+      try {
+        attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
+      } catch (err) {
+        console.warn('⚠️ [/check] Não foi possível criar o attachment:', err);
+      }
+    }
+
+    // 5) Prepara payload de resposta
+    const replyOptions = {
+      content: `✅ Transação: (${tx.date}) de \`${tx.from_id}\` para \`${tx.to_id}\` de \`${tx.amount.toFixed(8)}\` coins.`
     };
-    if (attachment) replyPayload.files = [attachment];
+    if (attachment) {
+      replyOptions.files = [attachment];
+    }
 
-    await interaction.reply(replyPayload);
+    // 6) Envia a resposta
+    try {
+      await interaction.editReply(replyOptions);
+    } catch (err) {
+      console.error('❌ [/check] Falha ao enviar resposta:', err);
+    }
 
-    // Remove o arquivo temporário
-    try { fs.unlinkSync(filePath); } catch {}
+    // 7) Limpa o arquivo temporário
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (err) {
+      console.warn('⚠️ [/check] Falha ao remover arquivo temporário:', err);
+    }
   },
 };

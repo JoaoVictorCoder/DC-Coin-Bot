@@ -1,4 +1,4 @@
-
+// commands/claim.js
 const { SlashCommandBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
@@ -6,61 +6,98 @@ const {
   addCoins,
   getCooldown,
   setCooldown,
-  setNotified
+  setNotified,
+  db,
+  genUniqueTxId
 } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('claim')
     .setDescription('Claim your daily reward (Like the claim button)'),
-  
+
   async execute(interaction) {
-    // adia a resposta para não expirar
-    await interaction.deferReply({ ephemeral: true });
+    // 1) Defer to avoid timeout
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    // carrega config.json
+    // 2) Load config safely
     const configFilePath = path.join(__dirname, '..', 'config.json');
-    let coins, cooldownMs;
+    let confAll = {};
+    try {
+      const raw = fs.readFileSync(configFilePath, 'utf8');
+      confAll = JSON.parse(raw);
+    } catch (err) {
+      console.warn('⚠️ Could not read config.json, defaulting to DM behavior', err);
+    }
 
-    if (interaction.guildId) {
-      const config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-      const conf = config[interaction.guildId];
-      if (!conf) {
-        return interaction.editReply('⚠️ Any rewards from this server.');
-      }
-      coins     = conf.coins;
-      // parseTempo inline:
-      const m = conf.tempo.match(/(\d+)([dhm])/);
-      const v = m ? parseInt(m[1]) : 24;
+    // 3) Determine coins & cooldown
+    let coins, cooldownMs;
+    if (interaction.guildId && confAll[interaction.guildId]) {
+      const conf = confAll[interaction.guildId];
+      coins = Number(conf.coins) || 1;
+
+      // parseTempo
+      const m = typeof conf.tempo === 'string' && conf.tempo.match(/^(\d+)([dhm])$/);
+      const v = m ? parseInt(m[1], 10) : 24;
       switch (m?.[2]) {
-        case 'h': cooldownMs = v * 3600000; break;
-        case 'm': cooldownMs = v *   60000; break;
-        case 'd': cooldownMs = v * 86400000; break;
-        default:  cooldownMs = 86400000;
+        case 'h': cooldownMs = v * 3_600_000; break;
+        case 'm': cooldownMs = v *    60_000; break;
+        case 'd': cooldownMs = v * 86_400_000; break;
+        default:  cooldownMs = 86_400_000;
       }
     } else {
-      // em DM, valores padrão
-      coins     = 1;
-      cooldownMs = 24 * 60 * 60 * 1000;
+      // defaults for DMs or missing config
+      coins = 1;
+      cooldownMs = 86_400_000;
     }
 
+    // 4) Cooldown check
     const userId = interaction.user.id;
-    const last   = getCooldown(userId);
-    const now    = Date.now();
-
+    let last;
+    try {
+      last = getCooldown(userId);
+    } catch (err) {
+      console.error('⚠️ getCooldown failed:', err);
+      last = 0;
+    }
+    const now = Date.now();
     if (now - last < cooldownMs) {
-      const restante = cooldownMs - (now - last);
-      const h = Math.floor(restante / 3600000);
-      const m = Math.floor((restante % 3600000) / 60000);
-      return interaction.editReply(`⏳ Wait more ${h}h ${m}m to claim again.`);
+      const remain = cooldownMs - (now - last);
+      const h = Math.floor(remain / 3_600_000);
+      const m = Math.floor((remain % 3_600_000) / 60_000);
+      return interaction
+        .editReply(`⏳ Please wait another ${h}h ${m}m before claiming again.`)
+        .catch(() => null);
     }
 
-    // adiciona coins e atualiza cooldown
-    addCoins(userId, coins);
-    setCooldown(userId, now);
-    setNotified(userId, false);
+    // 5) Grant coins & update cooldown
+    try {
+      addCoins(userId, coins);
+      setCooldown(userId, now);
+      setNotified(userId, false);
+    } catch (err) {
+      console.error('❌ Failed to update user data:', err);
+      return interaction
+        .editReply('❌ Could not update your balance. Try again later.')
+        .catch(() => null);
+    }
 
-    return interaction.editReply(`🎉 You claimed **${coins.toFixed(8)} coins** sucefully!`);
+    // 6) Log the transaction (best effort)
+    try {
+      const date = new Date().toISOString();
+      const txId = genUniqueTxId();
+      db.prepare(
+        `INSERT INTO transactions(id, date, from_id, to_id, amount)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(txId, date, '000000000000', userId, coins);
+    } catch (err) {
+      console.warn('⚠️ Failed to log claim transaction:', err);
+      // continuing anyway
+    }
+
+    // 7) Final reply
+    return interaction
+      .editReply(`🎉 You claimed **${coins.toFixed(8)} coins** successfully!`)
+      .catch(() => null);
   }
 };
-

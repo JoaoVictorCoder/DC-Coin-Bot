@@ -1,50 +1,117 @@
-
+// commands/restore.js
 const { SlashCommandBuilder } = require('discord.js');
-const { getUser, addCoins, setCoins } = require('../database');
 const Database = require('better-sqlite3');
 const path = require('path');
+const {
+  getUser,
+  addCoins,
+  setCoins,
+  db,
+  genUniqueTxId
+} = require('../database');
 
-const dbPath = path.join(__dirname, '..', 'playerList', 'database.db');
-const db = new Database(dbPath);
+// use the same database file that holds backups
+const backupsDb = new Database(path.join(__dirname, '..', 'playerList', 'database.db'));
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('restore')
-    .setDescription('Restores your wallet from a valid code from /backup')
+    .setDescription('Restores your wallet from a backup code')
     .addStringOption(opt =>
-      opt.setName('código')
-         .setDescription('Backup code generated from /backup')
+      opt.setName('code')
+         .setDescription('Backup code from /backup')
          .setRequired(true)
     ),
+
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    // defer to buy time
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    const code = interaction.options.getString('código').trim();
-    const row  = db.prepare('SELECT * FROM backups WHERE code = ?').get(code);
+    const code = interaction.options.getString('code').trim();
+    let row;
 
+    // 1) lookup backup
+    try {
+      row = backupsDb.prepare('SELECT userId FROM backups WHERE code = ?').get(code);
+    } catch (err) {
+      console.error('⚠️ [/restore] DB lookup failed:', err);
+      return interaction.editReply('❌ Restore failed. Please try again later.').catch(() => null);
+    }
     if (!row) {
-      return interaction.editReply('❌ Unknown Code.');
+      return interaction.editReply('❌ Unknown code.').catch(() => null);
     }
 
-    const { userId: oldId, amount } = row;
+    const oldId = row.userId;
     const newId = interaction.user.id;
 
-    // Se for a mesma conta, bloqueia
+    // 2) prevent self-restore
     if (oldId === newId) {
-      return interaction.editReply('❌ Tou are trying to restore the same wallet in the same account.\nUse \`/backup\` again.');
+      try {
+        backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
+      } catch (e) {
+        console.error('⚠️ [/restore] Failed to delete self-restore code:', e);
+      }
+      return interaction.editReply(
+        '❌ Cannot restore the same account. Generate a new backup with `/backup`.'
+      ).catch(() => null);
     }
 
-    // Realiza a transferência: adiciona à nova conta
-    addCoins(newId, amount);
-    // deduz da conta antiga
-    const origin = getUser(oldId);
-    setCoins(oldId, Math.max(0, origin.coins - amount));
+    // 3) fetch old balance
+    let origin;
+    try {
+      origin = getUser(oldId);
+    } catch (err) {
+      console.error('⚠️ [/restore] Failed to fetch old user data:', err);
+      return interaction.editReply('❌ Failed to retrieve backup owner.').catch(() => null);
+    }
+    const oldBal = origin.coins;
+    if (oldBal <= 0) {
+      // delete empty backup
+      try {
+        backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
+      } catch (e) {
+        console.error('⚠️ [/restore] Failed to delete empty backup code:', e);
+      }
+      return interaction.editReply('❌ That wallet has no coins.').catch(() => null);
+    }
 
-    // Remove o backup (uso único)
-    db.prepare('DELETE FROM backups WHERE code = ?').run(code);
+    // 4) transfer funds
+    try {
+      addCoins(newId, oldBal);
+      setCoins(oldId, 0);
+    } catch (err) {
+      console.error('⚠️ [/restore] Error transferring balance:', err);
+      return interaction.editReply('❌ Could not transfer balance. Try again later.').catch(() => null);
+    }
 
+    // 5) log transactions (best-effort)
+    const date = new Date().toISOString();
+    try {
+      const tx1 = genUniqueTxId();
+      db.prepare(`
+        INSERT INTO transactions(id, date, from_id, to_id, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(tx1, date, oldId, newId, oldBal);
+
+      const tx2 = genUniqueTxId();
+      db.prepare(`
+        INSERT INTO transactions(id, date, from_id, to_id, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(tx2, date, oldId, newId, oldBal);
+    } catch (err) {
+      console.warn('⚠️ [/restore] Failed to log transactions:', err);
+    }
+
+    // 6) delete used backup code
+    try {
+      backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
+    } catch (err) {
+      console.error('⚠️ [/restore] Failed to delete used backup code:', err);
+    }
+
+    // 7) final confirmation
     return interaction.editReply(
-      `🎉 Backup Restored Sucefully! **${amount.toFixed(8)} coins** was transfered to your new wallet.`
-    );
+      `🎉 Successfully restored **${oldBal.toFixed(8)} coins** to your wallet!`
+    ).catch(() => null);
   }
 };

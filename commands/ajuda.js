@@ -1,21 +1,38 @@
-
+// commands/ajuda.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ajuda')
     .setDescription('Mostra comandos disponíveis (PT-BR)'),
+
   async execute(interaction) {
-    const embed = new EmbedBuilder()
-      .setColor('#00BFFF')
-      .setTitle('🤖 Comandos disponíveis')
-      .addFields(
-        { name: '💰 Economia', value: '/bal, /rank, /pay, /card, /cardreset' },
-        { name: '🎁 Recompensas', value: '/set, /claim' },
-        { name: '💸 Comandos', value: '/view, /remind, /history, /check, /backup, /restore' },
-        { name: '📖 API', value: '/transactions' },
-        { name: '🆘 Ajuda', value: '/ajuda, /help' }
-      );
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    // 1) Adia para evitar timeout e manter privacidade
+    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+
+    try {
+      // 2) Constrói o embed de ajuda
+      const embed = new EmbedBuilder()
+        .setColor('#00BFFF')
+        .setTitle('🤖 Comandos Disponíveis')
+        .addFields(
+          { name: '💰 Economia',    value: '/bal, /rank, /pay, /card, /cardreset' },
+          { name: '🎁 Recompensas', value: '/set, /claim' },
+          { name: '💸 Utilitários', value: '/view, /remind, /history, /check, /backup, /restore' },
+          { name: '📖 API',         value: '/api' },
+          { name: '🆘 Ajuda',       value: '/ajuda, /help' }
+        );
+
+      // 3) Envia o embed em resposta ephemerally
+      await interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      console.error('❌ Erro no comando /ajuda:', err);
+      // 4) Fallback: mensagem simples
+      try {
+        await interaction.editReply({ content: '❌ Não foi possível exibir os comandos. Tente novamente mais tarde.' });
+      } catch {
+        // Silenciar erros adicionais
+      }
+    }
   },
 };
