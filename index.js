@@ -15,6 +15,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const { startApiServer } = require('./api');
 const {
   getUser, setCoins, addCoins, db,
   setCooldown, getCooldown, setNotified, wasNotified,
@@ -23,6 +24,7 @@ const {
   genUniqueTxId, enqueueDM, getNextDM, deleteDM
 } = require('./database');
 
+startApiServer();
 require('dotenv').config();
 
 const TOKEN     = process.env.DISCORD_TOKEN;
@@ -797,7 +799,7 @@ if (cmd === '!backup') {
     user = getUser(userId);
   } catch (err) {
     console.error('⚠️ Backup failed at getUser:', err);
-    return message.reply('❌ Backup failed. Try `/backup`.');
+    return message.reply('❌ Backup failed. Try `!backup`.');
   }
   if (user.coins <= 0) {
     return message.reply('❌ Empty wallet. No codes generated.');
@@ -810,28 +812,18 @@ if (cmd === '!backup') {
     codes = rows.map(r => r.code);
     while (codes.length < 12) {
       const c = crypto.randomBytes(12).toString('hex');
-      db.prepare('INSERT INTO backups(code,userId) VALUES(?,?)').run(c, userId);
+      db.prepare('INSERT OR IGNORE INTO backups(code, userId) VALUES(?,?)').run(c, userId);
       codes.push(c);
     }
   } catch (err) {
     console.error('⚠️ Backup failed at code generation:', err);
-    return message.reply('❌ Backup failed. Try `/backup`.');
+    return message.reply('❌ Backup failed. Try `!backup`.');
   }
 
-  // 3) monta linhas e arquivo
+  // 3) formata as linhas para o embed da DM
   const codeLines = codes.map(c => `> \`\`\`${c}\`\`\``).join('\n');
-  const tempDir = path.join(__dirname, '..', 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-  const fileName = `Data-do-backup_${userId}_discord_coins_backup_codes.txt`;
-  const filePath = path.join(tempDir, fileName);
-  try {
-    fs.writeFileSync(filePath, codeLines);
-  } catch (err) {
-    console.error('⚠️ Backup failed writing file:', err);
-    return message.reply('❌ Backup failed. Try `/backup`.');
-  }
 
-  // 4) prepara embed DM
+  // 4) monta embed para DM
   const dmEmbed = new EmbedBuilder()
     .setColor('Purple')
     .setTitle('🔒 Your Wallet Backup Codes')
@@ -843,26 +835,27 @@ if (cmd === '!backup') {
       'Use `/restore <CODE>` to restore.'
     ].join('\n'));
 
-  // 5) enfileira DM com anexo
+  // 5) enfileira a DM sem anexos
   try {
-    enqueueDM(userId, dmEmbed.toJSON(), { components: [] }, [{ path: filePath, name: fileName }]);
-    if (typeof client.processDMQueue === 'function') client.processDMQueue();
+    enqueueDM(userId, dmEmbed.toJSON(), { components: [] });
+    if (typeof client.processDMQueue === 'function') {
+      client.processDMQueue();
+    }
   } catch (err) {
     console.error('⚠️ I can’t enqueue DM:', err);
-    try { fs.unlinkSync(filePath); } catch {}
-    return message.reply('⚠️ I can\'t send you DM. Try using `/backup`.');
+    return message.reply('⚠️ I can’t send you DM. Try `!backup`.');
   }
 
-  // 6) resposta no canal
+  // 6) confirma no canal apenas informando que a DM foi enfileirada
   try {
-    await message.reply('✅ Successfully generated 12 backup codes and sent to your DM.');
+    await message.reply('✅ Backup codes generated and sent to your DMs!');
   } catch (err) {
     console.error('⚠️ No permission to reply in channel:', err);
-    // não crashar, mas ainda limpa o arquivo
-  } finally {
-    try { fs.unlinkSync(filePath); } catch {}
+    // sem crashar
   }
 }
+
+
 
 // dentro do seu handler de messageCreate, adicione:
 if (cmd === '!restore' && args.length >= 1) {
@@ -1254,14 +1247,35 @@ if (cmd === '!claim') {
 
     await message.reply(`🎉 You claimed **${coins.toFixed(8)} coins** successfully!`);
   } catch (err) {
-    console.error('❌ Erro no comando !claim:', err);
+    console.error('❌ Command error !claim:', err);
     try {
-      await message.reply('❌ Ocorreu um erro ao processar seu claim. Tente novamente mais tarde.');
+      await message.reply('❌ Error while processing your claim. Try again later.');
     } catch (sendErr) {
       console.error('❌ Falha ao enviar mensagem de erro no !claim:', sendErr);
     }
   }
 }
+
+
+  if (message.content === '!user') {
+    try {
+      const embed = new EmbedBuilder()
+        .setTitle('🏧 Registration 🏧')
+        .setDescription('Click on the button to register.');
+
+      const button = new ButtonBuilder()
+        .setCustomId('user_register_button')
+        .setLabel('Register')
+        .setStyle(ButtonStyle.Secondary); // cinza
+
+      const row = new ActionRowBuilder().addComponents(button);
+
+      await message.channel.send({ embeds: [embed], components: [row] });
+
+    } catch (err) {
+      console.error('❌ Error sending !user embed:', err);
+    }
+  }
 
 
 if (cmd === '!rank') {
@@ -1304,11 +1318,11 @@ if (cmd === '!rank') {
       ]
     });
   } catch (err) {
-    console.error('❌ Erro no comando !rank:', err);
+    console.error('❌ Command error !rank:', err);
     try {
-      await message.reply('❌ Ocorreu um erro ao processar o rank. Tente novamente mais tarde.');
+      await message.reply('❌ Error !rank. Try again later.');
     } catch (sendErr) {
-      console.error('❌ Falha ao enviar mensagem de erro no !rank:', sendErr);
+      console.error('❌ Error message send failure of !rank:', sendErr);
     }
   }
 }
@@ -1370,6 +1384,30 @@ client.on('interactionCreate', async interaction => {
   return interaction.editReply({ content: `🎉 You claimed **${coins.toFixed(8)} coins** successfully!` });
 });
 
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+
+  if (interaction.customId === 'user_register_button') {
+    if (interaction.replied || interaction.deferred) return;
+
+    try {
+      // NÃO chame deferReply antes de showModal!
+      // Chama o modal do comando user.js para abrir
+      await userCommand.execute(interaction);
+
+      // Modal abre imediatamente, não precisa de deferReply nem deleteReply
+
+    } catch (err) {
+      console.error('❌ Error handling user_register_button:', err);
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ Internal error.', ephemeral: true });
+        }
+      } catch {}
+    }
+  }
+});
+
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() || interaction.customId !== 'atm_balance') return;
@@ -1386,6 +1424,32 @@ client.on('interactionCreate', async interaction => {
     content: `💰 Account **${interaction.user.tag} Balance:** ${user.coins.toFixed(8)} **coins**`
   });
 });
+
+const userCommand = require('./commands/user');
+
+client.on('interactionCreate', async interaction => {
+  // Só processa se for modal submit com customId 'user_modal'
+  if (!interaction.isModalSubmit() || interaction.customId !== 'user_modal') return;
+
+  if (interaction.replied || interaction.deferred) return;
+
+  try {
+    // safeDefer chama deferReply de forma segura e ephemerally
+    await safeDefer(interaction, { flags: 64 }); // ephemeral
+
+    // Executa o modalSubmit do comando user.js sem deferReply dentro dele
+    await userCommand.modalSubmit(interaction);
+
+  } catch (e) {
+    console.error('Erro ao processar modal user:', e);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Internal error.', ephemeral: true });
+      }
+    } catch {}
+  }
+});
+
 
 client.on('interactionCreate', async interaction => {
   // Only handle the “Transfer” button
@@ -1603,6 +1667,7 @@ async function registerAllMembers() {
 
   console.log(`✅ Registred ${totalNew} users in ${totalGuilds} servers.`);
 }
+
 
 
 client.login(TOKEN);

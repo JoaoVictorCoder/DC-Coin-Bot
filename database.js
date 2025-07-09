@@ -55,7 +55,65 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cards_hash        ON cards(card_hash);
 `);
 
+// Migração para colunas username e password na tabela users
+const cols = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
+if (!cols.includes('username')) {
+  db.exec(`ALTER TABLE users ADD COLUMN username TEXT;`);
+}
+if (!cols.includes('password')) {
+  db.exec(`ALTER TABLE users ADD COLUMN password TEXT;`);
+}
+
+// Criar tabela sessions se não existir
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at INTEGER DEFAULT (strftime('%s','now')),
+    expires_at INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS backups (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    code    TEXT NOT NULL UNIQUE,
+    date    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+`);
+
+function createBackup(userId, code) {
+  // Insere um código de backup para o usuário
+  const stmt = db.prepare('INSERT INTO backups (user_id, code) VALUES (?, ?)');
+  stmt.run(userId, code);
+}
+
+function deleteBackupById(id) {
+  const stmt = db.prepare('DELETE FROM backups WHERE id = ?');
+  stmt.run(id);
+}
+
+function getBackupByCode(code) {
+  const stmt = db.prepare('SELECT * FROM backups WHERE code = ?');
+  return stmt.get(code);
+}
+
+setInterval(checkpoint, 5 * 60 * 1000);
+
 // —— FUNÇÕES ——
+
+function checkpoint() {
+  try {
+    db.exec('PRAGMA wal_checkpoint(FULL);');
+    console.log('✅ Checkpoint manual executado.');
+  } catch (err) {
+    console.error('❌ Erro ao executar checkpoint manual:', err);
+  }
+}
+
 
 // — USERS —
 function getUser(id) {
@@ -175,18 +233,116 @@ function deleteDM(id) {
   db.prepare('DELETE FROM dm_queue WHERE id = ?').run(id);
 }
 
+function getUser(userId) {
+  const stmt = db.prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
+  const user = stmt.get(userId);
+  return user || null;
+}
+
+function getUserByUsername(username) {
+  const stmt = db.prepare('SELECT * FROM users WHERE username = ? LIMIT 1');
+  const user = stmt.get(username);
+  return user || null;
+}
+
+function createUser(userId, username, hashedPassword) {
+  const stmt = db.prepare('INSERT INTO users (id, username, password) VALUES (?, ?, ?)');
+  stmt.run(userId, username, hashedPassword);
+}
+
+function updateUser(userId, username, hashedPassword) {
+  const stmt = db.prepare('UPDATE users SET username = ?, password = ? WHERE id = ?');
+  stmt.run(username, hashedPassword, userId);
+}
+
+// Cria sessão com id criptografado e timestamp atual
+function createSession(userId) {
+  // Gera um ID aleatório (UUID ou random bytes)
+  const rawId = crypto.randomBytes(24).toString('hex');
+  // Criptografa com SHA256 para formar session_id
+  const sessionId = crypto.createHash('sha256').update(rawId).digest('hex');
+  const now = Math.floor(Date.now() / 1000); // timestamp UNIX em segundos
+
+  const stmt = db.prepare(`
+    INSERT INTO sessions (session_id, user_id, created_at)
+    VALUES (?, ?, ?)
+  `);
+  stmt.run(sessionId, userId, now);
+
+  return sessionId;
+}
+
+// Busca sessão pelo session_id
+function getSession(sessionId) {
+  const stmt = db.prepare('SELECT * FROM sessions WHERE session_id = ? LIMIT 1');
+  return stmt.get(sessionId) || null;
+}
+
+// Deleta sessões antigas com created_at menor que timestamp limite
+function deleteOldSessions(expirationTimestamp) {
+  const stmt = db.prepare('DELETE FROM sessions WHERE created_at <= ?');
+  const info = stmt.run(expirationTimestamp);
+  return info.changes;
+}
+
+function getSessionsByUserId(userId) {
+  const stmt = db.prepare('SELECT * FROM sessions WHERE user_id = ?');
+  return stmt.all(userId);
+}
+
+function deleteSession(sessionId) {
+  const stmt = db.prepare('DELETE FROM sessions WHERE session_id = ?');
+  return stmt.run(sessionId);
+}
+
+function getCardCodeByOwnerId(ownerId) {
+  const stmt = db.prepare('SELECT code FROM cards WHERE owner_id = ? LIMIT 1');
+  const row = stmt.get(ownerId);
+  return row ? row.code : null;
+}
+
+function listBackups(userId) {
+  const stmt = db.prepare(`
+    SELECT id, code, date FROM backups
+    WHERE user_id = ?
+    ORDER BY date DESC
+  `);
+  return stmt.all(userId);
+}
+
+function deleteBackupByCode(code) {
+  const stmt = db.prepare('DELETE FROM backups WHERE code = ?');
+  return stmt.run(code);
+}
+
+function getBackupsByUserId(userId) {
+  const stmt = db.prepare('SELECT * FROM backups WHERE user_id = ? ORDER BY created_at DESC');
+  return stmt.all(userId);
+}
+
+function insertBackupCode(userId, code) {
+  const stmt = db.prepare('INSERT INTO backups (user_id, code, created_at) VALUES (?, ?, ?)');
+
+  const createdAt = Math.floor(Date.now() / 1000); // timestamp em segundos
+
+  return stmt.run(userId, code, createdAt);
+}
+
 module.exports = {
-  db,
+  createSession, getSession,
+  deleteOldSessions, db,
   // users
   getUser, setCoins, addCoins,
-  getCooldown, setCooldown,
-  wasNotified, setNotified,
-  getAllUsers,
+  getCooldown, setCooldown, deleteBackupByCode,
+  wasNotified, setNotified, getBackupsByUserId,
+  getAllUsers, updateUser, insertBackupCode,
+  createUser, getUserByUsername, getBackupByCode,
   // servers
   setServerApiChannel, getServerApiChannel,
+  getSessionsByUserId, getCardCodeByOwnerId,
   // cards
   createCard, resetCard, getCardOwner, deleteCard,
-  getCardOwnerByHash,
+  getCardOwnerByHash, deleteSession, listBackups,
   // transactions
   createTransaction, getTransaction, genUniqueTxId,
   // dm queue
