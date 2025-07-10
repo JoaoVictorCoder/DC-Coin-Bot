@@ -17,6 +17,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { startApiServer } = require('./api');
+const database = require('./database.js');
 const {
   getUser, setCoins, addCoins, db, getBill, deleteBill, createUser,
   setCooldown, getCooldown, setNotified, wasNotified,
@@ -833,7 +834,7 @@ if (cmd === '!set') {
   const config = loadConfig();
   config[message.guild.id] = { canalId, tempo: tempoStr, coins };
   if (!saveConfig(config)) {
-    console.warn('⚠️ Não foi possível salvar as novas configurações em config.json');
+    console.warn('⚠️ Impossible to save config.json');
   }
 
   // Busca o canal
@@ -873,6 +874,49 @@ if (cmd === '!set') {
   } catch (err) {
     console.error('❌ Failed to send ATM embed in !set:', err);
     // não crasha o bot
+  }
+}
+
+
+// dentro de client.on('messageCreate', async message => { … })
+if (cmd === '!api') {
+  const channelId = args[0];
+
+  // Uso correto
+  if (!channelId) {
+    try {
+      await message.reply('❌ Correct usage: !api <channelId>');
+    } catch (err) {
+      console.warn('⚠️ No permission to send API usage message:', err);
+    }
+    return;
+  }
+
+  // Só dono do servidor
+  if (!message.guild) return;
+  const ownerId = message.guild.ownerId;
+  if (message.author.id !== ownerId) {
+    try {
+      await message.reply('❌ Only the server owner can config this.');
+    } catch (err) {
+      console.warn('⚠️ No permission to send owner-only message:', err);
+    }
+    return;
+  }
+
+  // Tenta salvar no banco usando o método do database.js
+  try {
+    await database.setServerApiChannel(message.guild.id, channelId);
+  } catch (err) {
+    console.error('⚠️ API setup error:', err);
+    return;
+  }
+
+  // Confirmação de sucesso
+  try {
+    await message.reply('✅ API channel setup done.');
+  } catch (err) {
+    console.warn('⚠️ No permission to send API channel setup message:', err);
   }
 }
 
