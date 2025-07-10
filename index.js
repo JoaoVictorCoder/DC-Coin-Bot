@@ -9,6 +9,7 @@ process.on('unhandledRejection', (reason, promise) => {
   // opcional: logar em serviço externo
 });
 
+
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, AttachmentBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -17,11 +18,11 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { startApiServer } = require('./api');
 const {
-  getUser, setCoins, addCoins, db,
+  getUser, setCoins, addCoins, db, getBill, deleteBill, createUser,
   setCooldown, getCooldown, setNotified, wasNotified,
-  getAllUsers, getServerApiChannel, getCardOwner,
+  getAllUsers, getServerApiChannel, getCardOwner, genUniqueBillId,
   getCardOwnerByHash, createTransaction, getTransaction,
-  genUniqueTxId, enqueueDM, getNextDM, deleteDM
+  genUniqueTxId, enqueueDM, getNextDM, deleteDM, createBill
 } = require('./database');
 
 startApiServer();
@@ -34,7 +35,6 @@ if (!TOKEN, !CLIENT_ID) {
   console.error('❌ Missing DISCORD_TOKEN in .env');
   process.exit(1);
 }
-
 
 const client = new Client({
   intents: [
@@ -50,6 +50,18 @@ const client = new Client({
 const { setupCommands } = require('./commands');
 
 setupCommands(client, TOKEN, CLIENT_ID);
+
+const setupBillProcessor = require('./billprocessor');
+const setupPaybillProcessor = require('./paybillprocessor');
+
+setupBillProcessor(client);
+setupPaybillProcessor(client);
+
+const MS_IN_HOUR    = 3600 * 1000;
+const MS_IN_DAY     = 24 * MS_IN_HOUR;
+const NINETY_DAYS   = 90 * MS_IN_DAY;
+const SIX_MONTHS    = 182 * MS_IN_DAY; // aprox. 6 meses
+
 
 async function safeReply(ctx, options) {
   try {
@@ -97,7 +109,7 @@ client.on('interactionCreate', async interaction => {
   try {
     await cmd.execute(interaction);
   } catch (err) {
-    console.error(`Erro ao executar /${interaction.commandName}`, err);
+    console.error(`Execution error /${interaction.commandName}`, err);
     if (!interaction.replied) {
       await interaction.reply({ content: '❌ Command execution error.', ephemeral: true });
     }
@@ -124,7 +136,7 @@ function saveConfig(config) {
     fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf8');
     return true;
   } catch (err) {
-    console.error('⚠️ Falha ao escrever config.json:', err);
+    console.error('⚠️ Failure while writing config.json:', err);
     return false;
   }
 }
@@ -331,24 +343,27 @@ bc1qs9fnngn9svkw8vv5npd7fn504tqx40kuh00
   }
 });
 
-
-
 client.on('messageCreate', async (message) => {
   const args = message.content.trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
 if (cmd === '!bal') {
   try {
+    // importa só aqui, no handler
+    const { getUser } = require('./database');
     const user = getUser(message.author.id);
     return await message.reply(`> 💰 Saldo: ${user.coins.toFixed(8)} coins.`);
   } catch (err) {
-    console.error('❌ Failed to send !bal reply:', err);
-    // opcional: tentar notificar o usuário sobre o erro
+    console.error('❌ Error in !bal handler:', err);
+    // fallback silencioso
     try {
-      await message.reply('❌ Não foi possível recuperar seu saldo. Tente novamente mais tarde.');
-    } catch {}
+      await message.reply('❌ Falha ao carregar o saldo.');
+    } catch {
+      // nada a fazer se nem isso funcionar
+    }
   }
 }
+
 
 
 if (cmd === '!view') {
@@ -496,6 +511,231 @@ if (cmd === '!active' && args.length >= 3) {
   } catch (err) {
     console.error('⚠️ Error sending success response:', err);
   }
+}
+
+// --- Handler para !bill ---
+if (cmd === '!bill' && args.length >= 3) {
+  const [ fromId, toId, amountStr, timeStr ] = args;
+  const apiChannel = message.channel;
+
+  // 1) Validação dos IDs
+  if (!/^\d{17,}$/.test(fromId) || !/^\d{17,}$/.test(toId)) {
+    try {
+      await apiChannel.send({
+        content: '❌ Uso correto: !bill <fromId> <toId> <amount> [time]',
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.warn('⚠️ Não foi possível enviar mensagem de uso incorreto:', err);
+    }
+    return;
+  }
+
+  // 2) Validação do amount
+  const amount = amountStr.trim();
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    try {
+      await apiChannel.send({
+        content: '❌ Formato de valor inválido.',
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.warn('⚠️ Não foi possível enviar mensagem de valor inválido:', err);
+    }
+    return;
+  }
+
+  // 3) Cálculo do timestamp
+  const now = Date.now();
+  let timestamp = now;
+  if (timeStr) {
+    const m = timeStr.match(/^(\d+)([dhms])$/);
+    if (!m) {
+      try {
+        await apiChannel.send({
+          content: '❌ Formato de tempo inválido. Use 1d, 2h, 30m ou 45s.',
+          reply: { messageReference: message.id }
+        });
+      } catch (err) {
+        console.warn('⚠️ Não foi possível enviar mensagem de tempo inválido:', err);
+      }
+      return;
+    }
+    const val  = parseInt(m[1], 10);
+    const unit = m[2];
+    let delta;
+    switch (unit) {
+      case 'd': delta = val * MS_IN_DAY;    break;
+      case 'h': delta = val * MS_IN_HOUR;   break;
+      case 'm': delta = val * 60 * 1000;    break;
+      case 's': delta = val * 1000;         break;
+    }
+    // garante limites de 1h a 6 meses em relação aos 90 dias
+    if (delta < MS_IN_HOUR)    delta = MS_IN_HOUR;
+    if (delta > SIX_MONTHS)    delta = SIX_MONTHS;
+    // se delta ≤ 90d: volta no tempo; senão: adianta além dos 90d
+    timestamp = (delta <= NINETY_DAYS)
+      ? now - (NINETY_DAYS - delta)
+      : now + (delta - NINETY_DAYS);
+  }
+
+  // 4) Criação da bill em DB
+  let billId;
+  try {
+    billId = createBill(fromId, toId, amount, timestamp);
+  } catch (err) {
+    console.warn('⚠️ Bill creation failure:', err);
+    return;
+  }
+
+  // 5) Respostas referenciando a mensagem original
+  try {
+    // Resposta no formato userID_from:billID
+    await apiChannel.send({
+      content: `${fromId}:${billId}`,
+      reply: { messageReference: message.id }
+    });
+  } catch (err) {
+    console.warn('⚠️ Confirmation message sending error:', err);
+  }
+}
+
+// … dentro do seu client.on('messageCreate', async message => { … } )…
+
+if (cmd === '!paybill' && args.length >= 1) {
+  const billId     = args[0];
+  const apiChannel = message.channel;
+  const executorId = message.author.id;
+
+  // helper para responder sem crashar
+  const reply = async ok => {
+    try {
+      await apiChannel.send({
+        content: `${billId}:${ok ? 'true' : 'false'}`,
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.warn(`⚠️ Falha ao enviar resposta ${ok} em !paybill:`, err);
+    }
+  };
+
+  // 1) carrega a bill
+  let bill;
+  try {
+    bill = getBill(billId);
+  } catch (err) {
+    console.warn('⚠️ Erro ao buscar bill:', err);
+  }
+  if (!bill) return reply(false);
+
+  // 2) extrai dados
+  const toId     = bill.to_id;
+  const fromId   = bill.from_id;        // quem criou a bill
+  const amount   = parseFloat(bill.amount);
+  if (isNaN(amount) || amount <= 0) return reply(false);
+
+  // 3) confere saldo do pagador
+  let payer;
+  try {
+    payer = getUser(executorId);
+  } catch (err) {
+    console.warn('⚠️ Erro ao buscar executor:', err);
+    return reply(false);
+  }
+  if (!payer || payer.coins < amount) {
+    return reply(false);
+  }
+
+  // 4) registra a transação (sempre)
+  const paidAt = new Date().toISOString();
+  try {
+    db.prepare(`
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      VALUES (?,?,?,?,?)
+    `).run(billId, paidAt, executorId, toId, amount);
+  } catch (err) {
+    console.warn('⚠️ Erro ao registrar transação:', err);
+  }
+
+  // 5) deleta a bill
+  try {
+    deleteBill(billId);
+  } catch (err) {
+    console.warn('⚠️ Erro ao deletar bill:', err);
+  }
+
+  // 6) se não for self-pay, atualiza saldos
+  if (executorId !== toId) {
+    let payee = null;
+
+    // 6.1) tenta buscar
+    try {
+      payee = getUser(toId);
+    } catch {
+      payee = null;
+    }
+
+    // 6.2) se não existir, cria com saldo zero
+    if (!payee) {
+      try {
+        createUser(toId);
+        payee = getUser(toId);
+      } catch (err) {
+        console.warn('⚠️ Erro ao criar destinatário:', err);
+        return reply(false);
+      }
+    }
+
+    // 6.3) transfere
+    try {
+      setCoins(executorId, payer.coins - amount);
+      setCoins(toId,        payee.coins + amount);
+    } catch (err) {
+      console.warn('⚠️ Erro ao atualizar saldos:', err);
+      return reply(false);
+    }
+  }
+
+  // 7) enqueue DM para quem recebeu (toId)
+  try {
+    const { EmbedBuilder } = require('discord.js');
+    const recipientEmbed = new EmbedBuilder()
+      .setTitle('🏦Bill Paid🏦')
+      .setDescription([
+        `You received **${amount.toFixed(8)}** coins`,
+        `From: \`${executorId}\``,
+        `Bill ID: \`${billId}\``,
+        '*Received ✅*'
+      ].join('\n'));
+    enqueueDM(toId, recipientEmbed.toJSON(), { components: [] });
+  } catch (err) {
+    console.warn('⚠️ Erro ao enfileirar DM para o recebedor:', err);
+  }
+
+  // 8) enqueue DM para quem criou (fromId), se existir e for diferente de executor
+  if (fromId && fromId !== executorId) {
+    try {
+      const { EmbedBuilder } = require('discord.js');
+      const creatorEmbed = new EmbedBuilder()
+        .setTitle('🏦Your Bill Has Been Paid🏦')
+        .setDescription([
+          `Your bill \`${billId}\` for **${amount.toFixed(8)}** coins`,
+          `has been paid by: \`${executorId}\``,
+          '*Thank you!*'
+        ].join('\n'));
+      enqueueDM(fromId, creatorEmbed.toJSON(), { components: [] });
+    } catch (err) {
+      console.warn('⚠️ Erro ao enfileirar DM para o criador:', err);
+    }
+  }
+
+  // 9) processa a fila de DMs (se existir)
+  if (typeof message.client.processDMQueue === 'function') {
+    message.client.processDMQueue();
+  }
+
+  // 10) confirma no canal
+  return reply(true);
 }
 
 
@@ -742,6 +982,8 @@ if (cmd === '!pay') {
 
 
 
+
+
   if (cmd === '!check') {
     const txId = args[0];
     if (!txId) {
@@ -780,7 +1022,7 @@ if (cmd === '!pay') {
         console.warn('⚠️ No permission to send the verification ID:', err);
         await message.reply(`${replyText}\n❌ No permission to send the ID.`);
       } else {
-        console.error('Erro inesperado ao enviar comprovante de verificação:', err);
+        console.error('Unexpected eror while sending confirmation txt:', err);
         await message.reply(`${replyText}\n❌ ID sending failure.`);
       }
     } finally {
@@ -1107,7 +1349,52 @@ if (cmd === '!history') {
   }
 }
 
+if (cmd === '!verify') {
+  const id = args[0];
+  const channel = message.channel;
 
+  // helper para enviar sem crashar
+  const safeReply = async content => {
+    try {
+      await channel.send({
+        content,
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.error('⚠️ !verify reply failed:', err);
+    }
+  };
+
+  // 1) valida sintaxe
+  if (!id) {
+    return safeReply('❌ Use: `!verify <ID>`');
+  }
+
+  // 2) ignora se for uma bill
+  let isBill = false;
+  try {
+    isBill = !!getBill(id);
+  } catch (err) {
+    console.error('⚠️ Error checking bills in !verify:', err);
+    isBill = false;
+  }
+  if (isBill) {
+    return safeReply(`${id}:false`);
+  }
+
+  // 3) busca na tabela transactions
+  let found = false;
+  try {
+    const row = db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id);
+    found = !!row;
+  } catch (err) {
+    console.error('⚠️ Error querying transactions in !verify:', err);
+    found = false;
+  }
+
+  // 4) responde true ou false
+  return safeReply(`${id}:${found ? 'true' : 'false'}`);
+}
 
 if (cmd === '!global') {
   const channel = message.channel;
@@ -1132,16 +1419,22 @@ if (cmd === '!global') {
   let totalClaims  = 0;
   let totalUsers   = 0;
   let yourBalance  = 0;
+  let totalBills   = 0;
   try {
     totalCoins   = db.prepare('SELECT SUM(coins) AS sum FROM users').get().sum || 0;
     totalTx      = db.prepare('SELECT COUNT(*) AS cnt FROM transactions').get().cnt;
     totalClaims  = db.prepare("SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = '000000000000'").get().cnt;
     totalUsers   = db.prepare('SELECT COUNT(*) AS cnt FROM users').get().cnt;
+    totalBills   = db.prepare('SELECT COUNT(*) AS cnt FROM bills').get().cnt;
     yourBalance  = getUser(message.author.id).coins;
   } catch (err) {
     console.error('⚠️ Failed to fetch global stats:', err);
-    try { return await channel.send('❌ Error retrieving global economy info.'); }
-    catch { console.error('❌ Cannot send error message in channel:', err); return; }
+    try {
+      return await channel.send('❌ Error retrieving global economy info.');
+    } catch {
+      console.error('❌ Cannot send error message in channel:', err);
+      return;
+    }
   }
 
   // 3) Next reward timing
@@ -1184,6 +1477,7 @@ if (cmd === '!global') {
       : `⏱️Next Reward: \`${nextRewardText}\`⚠️`,
     `🏦Servers: \`${totalGuilds}\` servers`,
     `📖Total Transactions: \`${totalTx}\` transactions`,
+    `💳Total Bills: \`${totalBills}\` bills`,
     `📨Total Claims: \`${totalClaims}\` claims`,
     `⭐Coin Users: \`${totalUsers}\` users`,
     '',
@@ -1441,7 +1735,7 @@ client.on('interactionCreate', async interaction => {
     await userCommand.modalSubmit(interaction);
 
   } catch (e) {
-    console.error('Erro ao processar modal user:', e);
+    console.error('User modal error:', e);
     try {
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: '❌ Internal error.', ephemeral: true });
@@ -1449,6 +1743,7 @@ client.on('interactionCreate', async interaction => {
     } catch {}
   }
 });
+
 
 
 client.on('interactionCreate', async interaction => {
@@ -1632,6 +1927,46 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 
+function removeOldBills() {
+  const threshold = Date.now() - NINETY_DAYS;
+
+  try {
+    // 1) Busca todas as bills expiradas
+    const expired = db
+      .prepare('SELECT bill_id, from_id, amount FROM bills WHERE date < ?')
+      .all(threshold);
+
+    // 2) Enfileira DM de expiração para cada from_id válido
+    for (const { bill_id, from_id, amount } of expired) {
+      if (from_id) {
+        try {
+          const embed = new EmbedBuilder()
+            .setTitle('# ⚠️Your Bill Expired⚠️')
+            .setDescription([
+              '*You will need to call another bill ID.*',
+              '',
+              `Bill ID: \`${bill_id}\``,
+              `Worth: \`${parseFloat(amount).toFixed(8)}\` coins.`
+            ].join('\n'));
+
+          enqueueDM(from_id, embed.toJSON(), { components: [] });
+        } catch (err) {
+          console.warn(`⚠️ Could not enqueue expiration DM for ${from_id}:`, err);
+        }
+      }
+    }
+
+    // 3) Remove todas as bills expiradas
+    const result = db
+      .prepare('DELETE FROM bills WHERE date < ?')
+      .run(threshold);
+
+    console.log(`[removeOldBills] ${result.changes} bills removed.`);
+  } catch (err) {
+    console.warn('⚠️ Old bill deleting error:', err);
+  }
+}
+
 
 // Função para registrar apenas usuários novos (que ainda não existem no DB)
 async function registerAllMembers() {
@@ -1668,6 +2003,6 @@ async function registerAllMembers() {
   console.log(`✅ Registred ${totalNew} users in ${totalGuilds} servers.`);
 }
 
-
+setInterval(removeOldBills, 10 * 60 * 1000);
 
 client.login(TOKEN);

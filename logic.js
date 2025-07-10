@@ -247,6 +247,112 @@ async function updateUserInfo(userId, username, passwordHash) {
   return true;
 }
 
+// — New: create a bill —
+// called by POST /api/bill/create
+// fromId: who opens the bill (may be ''), toId: who will pay it,
+// amount: string or number, timestamp (ms) optional
+async function createBillLogic(fromId, toId, amount, timestamp = Date.now()) {
+  if (!toId || !amount) {
+    throw new Error('Missing parameters for createBill');
+  }
+  // ensure we store all decimals as text
+  const amtText = amount.toString();
+  const ts = Number(timestamp) || Date.now();
+  // this will generate a unique bill_id and INSERT into bills
+  const billId = dbCreateBill(fromId || '', toId, amtText, ts);
+  return billId;
+}
+
+// — New: pay a bill —
+// called by POST /api/bill/pay (after authMiddleware)
+// executorId is the authenticated user paying the bill,
+// billId is the one passed in the HTTP body
+async function payBillLogic(executorId, billId) {
+  if (!executorId || !billId) {
+    throw new Error('Missing parameters for payBill');
+  }
+
+  // 1) fetch the bill
+  const bill = getBill(billId);
+  if (!bill) {
+    throw new Error('Bill not found');
+  }
+
+  // 2) extract & validate
+  const toId   = bill.to_id;
+  const amount = parseFloat(bill.amount);
+  if (isNaN(amount) || amount <= 0) {
+    throw new Error('Invalid bill amount');
+  }
+
+  // 3) ensure payer exists and has funds
+  const payer = getUser(executorId);
+  if (!payer || payer.coins < amount) {
+    throw new Error(`Insufficient funds: need ${amount}`);
+  }
+
+  // 4) ensure receiver exists (creates them if missing)
+  const receiver = getUser(toId);
+  if (!receiver) {
+    throw new Error('Receiver not found');
+  }
+
+  // 5) update balances
+  setCoins(executorId, payer.coins - amount);
+  addCoins(toId, receiver.coins + amount);
+
+  // 6) log the transaction using the same UUID as the bill
+  const nowIso = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO transactions (id, date, from_id, to_id, amount)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(billId, nowIso, executorId, toId, amount);
+
+  // 7) enqueue a DM notification to the receiver
+  const embedObj = {
+    type: 'rich',
+    title: '🏦Bill Paid🏦',
+    description: [
+      `**${amount}** coins`,
+      `From: \`${executorId}\``,
+      `Bill ID: \`${billId}\``,
+      '*Received ✅*'
+    ].join('\n')
+  };
+  const rowObj = { components: [] };
+  enqueueDM(toId, embedObj, rowObj);
+
+  // 8) remove the paid bill
+  deleteBill(billId);
+
+  // return details if you need them
+  return { billId, toId, amount, date: nowIso };
+}
+
+async function getBillsTo(userId, page = 1) {
+  const limit  = 20;
+  const offset = (page - 1) * limit;
+  return db.prepare(`
+    SELECT bill_id AS id, from_id, to_id, amount, date
+    FROM bills
+    WHERE to_id = ?
+    ORDER BY date DESC
+    LIMIT ? OFFSET ?
+  `).all(userId, limit, offset);
+}
+
+async function getBillsFrom(userId, page = 1) {
+  const limit  = 20;
+  const offset = (page - 1) * limit;
+  return db.prepare(`
+    SELECT bill_id AS id, from_id, to_id, amount, date
+    FROM bills
+    WHERE from_id = ?
+    ORDER BY date DESC
+    LIMIT ? OFFSET ?
+  `).all(userId, limit, offset);
+}
+
 module.exports = {
   authenticate,
   login,
@@ -261,4 +367,6 @@ module.exports = {
   listBackups,
   restoreBackup,
   updateUser: updateUserInfo,
+  createBill: createBillLogic,
+  payBill:    payBillLogic,
 };

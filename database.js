@@ -7,7 +7,6 @@ const db = new Database(path.join(__dirname, 'playerList', 'database.db'));
 
 // 1) PRAGMAs
 db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
 
 // 2) Criação inicial de tabelas
 db.exec(`
@@ -113,6 +112,19 @@ function checkpoint() {
     console.error('❌ Erro ao executar checkpoint manual:', err);
   }
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bills (
+    bill_id TEXT PRIMARY KEY,
+    from_id TEXT NOT NULL,
+    to_id   TEXT NOT NULL,
+    amount  TEXT NOT NULL,
+    date    INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_bills_from ON bills(from_id);
+  CREATE INDEX IF NOT EXISTS idx_bills_to   ON bills(to_id);
+`);
+
 
 
 // — USERS —
@@ -328,6 +340,44 @@ function insertBackupCode(userId, code) {
   return stmt.run(userId, code, createdAt);
 }
 
+// BILL API
+
+function genUniqueBillId() {
+  let id;
+  do {
+    id = uuidv4();
+  } while (db.prepare('SELECT 1 FROM bills WHERE bill_id = ?').get(id));
+  return id;
+}
+
+// 3) Cria uma nova bill
+function createBill(fromId, toId, amountStr, timestamp) {
+  const billId = genUniqueBillId();
+  db.prepare(`
+    INSERT INTO bills (bill_id, from_id, to_id, amount, date)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(billId, fromId, toId, amountStr, timestamp);
+  return billId;
+}
+
+// 4) Recupera uma bill
+function getBill(billId) {
+  return db.prepare('SELECT * FROM bills WHERE bill_id = ?').get(billId) || null;
+}
+
+// 5) Remove uma bill
+function deleteBill(billId) {
+  return db.prepare('DELETE FROM bills WHERE bill_id = ?').run(billId);
+}
+
+// 6) Lista bills de um usuário (opcional)
+function listBillsByUser(userId, role = 'from') {
+  const col = role === 'to' ? 'to_id' : 'from_id';
+  return db.prepare(`SELECT * FROM bills WHERE ${col} = ? ORDER BY date DESC`).all(userId);
+}
+
+
+
 module.exports = {
   createSession, getSession,
   deleteOldSessions, db,
@@ -346,5 +396,7 @@ module.exports = {
   // transactions
   createTransaction, getTransaction, genUniqueTxId,
   // dm queue
-  enqueueDM, getNextDM, deleteDM
+  enqueueDM, getNextDM, deleteDM,
+  // bill
+  genUniqueBillId, createBill, getBill, deleteBill, listBillsByUser
 };
