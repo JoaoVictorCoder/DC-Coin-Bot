@@ -40,6 +40,15 @@
           CLIENT_ID=YOUR_CLIENT_ID
         ```
 
+       - Go to the api.js and change the port number in:
+         ```
+           const port = process.env.API_PORT || 1033;  <<< // Change the port here
+             app.listen(port, () => {
+               console.log(`API REST rodando na porta ${port}`);
+            });
+           }
+         ```
+
   5. Start the bot
       ```
         npm start
