@@ -2,7 +2,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { db, getUser, getAllUsers, getCooldown } = require('../database');
+const { db, getUser, getCooldown } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -29,7 +29,12 @@ module.exports = {
       }
 
       // 3) Gather global stats
-      let totalCoins = 0, totalTx = 0, totalClaims = 0, totalUsers = 0, yourBalance = 0;
+      let totalCoins   = 0;
+      let totalTx      = 0;
+      let totalClaims  = 0;
+      let totalUsers   = 0;
+      let totalBills   = 0;
+      let yourBalance  = 0;
       try {
         totalCoins   = db.prepare('SELECT SUM(coins) AS sum FROM users').get().sum || 0;
         totalTx      = db.prepare('SELECT COUNT(*) AS cnt FROM transactions').get().cnt;
@@ -37,6 +42,7 @@ module.exports = {
           "SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = '000000000000'"
         ).get().cnt;
         totalUsers   = db.prepare('SELECT COUNT(*) AS cnt FROM users').get().cnt;
+        totalBills   = db.prepare('SELECT COUNT(*) AS cnt FROM bills').get().cnt;
         yourBalance  = getUser(interaction.user.id).coins;
       } catch (err) {
         console.error('⚠️ Failed to fetch global stats:', err);
@@ -87,6 +93,7 @@ module.exports = {
         `⏱️ Next Reward:   ${nextRewardText}`,
         `🏦 Servers:       \`${totalGuilds}\``,
         `📖 Transactions:  \`${totalTx}\``,
+        `💳 Bills:         \`${totalBills}\``,
         `📨 Claims:        \`${totalClaims}\``,
         `⭐ Coin Users:    \`${totalUsers}\``,
         '',
