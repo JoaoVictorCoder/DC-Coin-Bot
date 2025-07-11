@@ -5,7 +5,6 @@ const {
   getUser,
   createUser,
   setCoins,
-  addCoins,
   db,
   deleteBill,
   enqueueDM
@@ -17,14 +16,14 @@ const {
  */
 module.exports = function setupPaybillProcessor(client) {
   client.on('interactionCreate', async interaction => {
-    // Only handle paybill modal submits
     if (!interaction.isModalSubmit() || interaction.customId !== 'paybill_modal') return;
 
     // 1) Acknowledge the modal
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     // 2) Read inputs
-    const billId     = interaction.fields.getTextInputValue('billId').trim();
+    const billId = interaction.fields.getTextInputValue('billId').trim();
+
     let bill;
     try {
       bill = getBill(billId);
@@ -38,12 +37,18 @@ module.exports = function setupPaybillProcessor(client) {
     const executorId = interaction.user.id;
     const toId       = bill.to_id;
     const fromId     = bill.from_id;
-    const amount     = parseFloat(bill.amount);
-    const selfPay    = executorId === toId;
 
-    // 3) If not self pay, verify balance & perform transfer
+    // 3) Parse and truncate amount to 8 decimal places
+    let amount = parseFloat(bill.amount);
+    amount = Math.floor(amount * 1e8) / 1e8;
+    if (isNaN(amount) || amount <= 0) {
+      return interaction.editReply('❌ Invalid bill amount.');
+    }
+
+    const selfPay = executorId === toId;
+
+    // 4) If not self-pay, verify balance & perform transfer
     if (!selfPay) {
-      // 3.1) Ensure payer exists
       let payer;
       try {
         payer = getUser(executorId);
@@ -54,12 +59,9 @@ module.exports = function setupPaybillProcessor(client) {
         return interaction.editReply('❌ Your account not found.');
       }
       if (payer.coins < amount) {
-        return interaction.editReply(
-          `💸 Low balance. You need **${amount.toFixed(8)}** coins.`
-        );
+        return interaction.editReply(`💸 Low balance. You need **${amount.toFixed(8)}** coins.`);
       }
 
-      // 3.2) Ensure payee exists or create
       let payee;
       try {
         payee = getUser(toId);
@@ -76,17 +78,20 @@ module.exports = function setupPaybillProcessor(client) {
         }
       }
 
-      // 3.3) Perform transfer
+      // compute new balances and truncate
+      const newPayerBalance = Math.floor((payer.coins - amount) * 1e8) / 1e8;
+      const newPayeeBalance = Math.floor((payee.coins + amount) * 1e8) / 1e8;
+
       try {
-        setCoins(executorId, payer.coins - amount);
-        setCoins(toId,        payee.coins + amount);
+        setCoins(executorId, newPayerBalance);
+        setCoins(toId,        newPayeeBalance);
       } catch (err) {
         console.warn('⚠️ Error performing transfer:', err);
         return interaction.editReply('❌ Transfer failed.');
       }
     }
 
-    // 4) Log transaction with same bill ID
+    // 5) Log transaction with truncated amount
     const paidAt = new Date().toISOString();
     try {
       db.prepare(`
@@ -97,56 +102,57 @@ module.exports = function setupPaybillProcessor(client) {
       console.warn('⚠️ Error logging transaction:', err);
     }
 
-    // 5) Delete the bill
+    // 6) Delete the bill
     try {
       deleteBill(billId);
     } catch (err) {
       console.warn('⚠️ Error deleting bill:', err);
     }
 
-    // 6) Enqueue DM for recipient (toId)
+    // 7) Enqueue DM for recipient (toId)
     try {
-      const embedTo = {
+      enqueueDM(toId, {
         title: '🏦 Bill Paid 🏦',
         description: [
-          `**${amount.toFixed(8)}** coins received`,
+          `Received **${amount.toFixed(8)}** coins`,
           `From: \`${executorId}\``,
           `Bill ID: \`${billId}\``,
           '*Received ✅*'
         ].join('\n'),
         type: 'rich'
-      };
-      enqueueDM(toId, embedTo, { components: [] });
+      }, { components: [] });
     } catch (err) {
       console.warn('⚠️ Error enqueueing recipient DM:', err);
     }
 
-    // 7) Enqueue DM for bill creator (fromId) if exists and different
+    // 8) Enqueue DM for bill creator (fromId) if exists and different
     if (fromId && fromId !== executorId) {
       try {
-        const embedFrom = {
+        enqueueDM(fromId, {
           title: '🏦 Your Bill Was Paid 🏦',
           description: [
-            `Your bill \`${billId}\` for **${amount.toFixed(8)}** coins was paid by \`${executorId}\``,
+            `Your bill \`${billId}\` for **${amount.toFixed(8)}** coins`,
+            `was paid by: \`${executorId}\``,
             '*Thank you!*'
           ].join('\n'),
           type: 'rich'
-        };
-        enqueueDM(fromId, embedFrom, { components: [] });
+        }, { components: [] });
       } catch (err) {
         console.warn('⚠️ Error enqueueing creator DM:', err);
       }
     }
 
-    // 8) Process DM queue
+    // 9) Process DM queue
     if (typeof interaction.client.processDMQueue === 'function') {
       interaction.client.processDMQueue();
     }
 
-    // 9) Final reply
+    // 10) Final reply
     let toTag = 'yourself';
     try {
-      toTag = selfPay ? 'yourself' : (await interaction.client.users.fetch(toId)).tag;
+      toTag = selfPay
+        ? 'yourself'
+        : (await interaction.client.users.fetch(toId)).tag;
     } catch {}
     return interaction.editReply(
       selfPay

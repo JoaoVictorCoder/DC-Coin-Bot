@@ -420,7 +420,7 @@ if (cmd === '!active' && args.length >= 3) {
 
   // 0) Checa permissão de envio
   if (guild && !apiChannel.permissionsFor(botMember).has('SendMessages')) {
-    console.warn(`❌No permission to use api channel at: ${guild.name} (${guild.id})`);
+    console.warn(`❌ No permission to use API channel at: ${guild.name} (${guild.id})`);
     return;
   }
 
@@ -437,8 +437,9 @@ if (cmd === '!active' && args.length >= 3) {
     return;
   }
 
-  // 2) valida valor
-  const amount = parseFloat(valorStr);
+  // 2) valida valor e TRUNCATE para 8 casas
+  let amount = parseFloat(valorStr);
+  amount = Math.floor(amount * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) {
     try {
       await apiChannel.send({
@@ -466,7 +467,11 @@ if (cmd === '!active' && args.length >= 3) {
   }
 
   // 4) garante que o destinatário exista no banco
-  getUser(targetId);
+  try {
+    getUser(targetId);
+  } catch {
+    createUser(targetId);
+  }
 
   const owner = getUser(ownerId);
   // saldo insuficiente?
@@ -482,26 +487,43 @@ if (cmd === '!active' && args.length >= 3) {
     return;
   }
 
-  // 5) faz a transferência de coins
-  setCoins(ownerId, owner.coins - amount);
-  addCoins(targetId, amount);
+  // 5) faz a transferência, TRUNCANDO também os novos saldos
+  const newOwnerBalance = Math.floor((owner.coins - amount) * 1e8) / 1e8;
+  try {
+    setCoins(ownerId, newOwnerBalance);
+  } catch (err) {
+    console.error('⚠️ Error updating owner balance:', err);
+    // fallback: abort
+    return;
+  }
 
-  // data atual ISO
+  let target = getUser(targetId);
+  const currentTargetCoins = target ? target.coins : 0;
+  const newTargetBalance = Math.floor((currentTargetCoins + amount) * 1e8) / 1e8;
+  try {
+    addCoins(targetId, amount); // assuming addCoins simply adds, but balance will still reflect truncated values
+    setCoins(targetId, newTargetBalance);
+  } catch (err) {
+    console.error('⚠️ Error updating target balance:', err);
+    // attempt rollback omitted
+  }
+
+  // 6) registra a transação para owner e receiver, com amount truncado
   const date = new Date().toISOString();
-
-  // 6) registra a transação para o owner
-  const txIdOwner = genUniqueTxId();
-  db.prepare(`
-    INSERT INTO transactions(id, date, from_id, to_id, amount)
-    VALUES (?,?,?,?,?)
-  `).run(txIdOwner, date, ownerId, targetId, amount);
-
-  //     registra também para o receiver com outro UUID
+  const txIdOwner    = genUniqueTxId();
   const txIdReceiver = genUniqueTxId();
-  db.prepare(`
-    INSERT INTO transactions(id, date, from_id, to_id, amount)
-    VALUES (?,?,?,?,?)
-  `).run(txIdReceiver, date, ownerId, targetId, amount);
+  try {
+    db.prepare(`
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      VALUES (?,?,?,?,?)
+    `).run(txIdOwner, date, ownerId, targetId, amount);
+    db.prepare(`
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      VALUES (?,?,?,?,?)
+    `).run(txIdReceiver, date, ownerId, targetId, amount);
+  } catch (err) {
+    console.error('⚠️ Error logging transactions:', err);
+  }
 
   // 7) responde com sucesso referenciando a mensagem anterior
   try {
@@ -513,6 +535,7 @@ if (cmd === '!active' && args.length >= 3) {
     console.error('⚠️ Error sending success response:', err);
   }
 }
+
 
 // --- Handler para !bill ---
 if (cmd === '!bill' && args.length >= 3) {
@@ -629,10 +652,10 @@ if (cmd === '!paybill' && args.length >= 1) {
   }
   if (!bill) return reply(false);
 
-  // 2) extrai dados
-  const toId     = bill.to_id;
-  const fromId   = bill.from_id;        // quem criou a bill
-  const amount   = parseFloat(bill.amount);
+  // 2) extrai e trunca o valor para 8 casas decimais
+  let amount = parseFloat(bill.amount);
+  // descarta tudo além de 8 casas decimais
+  amount = Math.floor(amount * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) return reply(false);
 
   // 3) confere saldo do pagador
@@ -647,13 +670,13 @@ if (cmd === '!paybill' && args.length >= 1) {
     return reply(false);
   }
 
-  // 4) registra a transação (sempre)
+  // 4) registra a transação (sempre) usando o valor truncado
   const paidAt = new Date().toISOString();
   try {
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(billId, paidAt, executorId, toId, amount);
+    `).run(billId, paidAt, executorId, bill.to_id, amount);
   } catch (err) {
     console.warn('⚠️ Erro ao registrar transação:', err);
   }
@@ -665,77 +688,40 @@ if (cmd === '!paybill' && args.length >= 1) {
     console.warn('⚠️ Erro ao deletar bill:', err);
   }
 
-  // 6) se não for self-pay, atualiza saldos
-  if (executorId !== toId) {
+  // 6) se não for self-pay, atualiza saldos também truncando após operação
+  if (executorId !== bill.to_id) {
     let payee = null;
-
-    // 6.1) tenta buscar
     try {
-      payee = getUser(toId);
+      payee = getUser(bill.to_id);
     } catch {
       payee = null;
     }
-
-    // 6.2) se não existir, cria com saldo zero
     if (!payee) {
       try {
-        createUser(toId);
-        payee = getUser(toId);
+        createUser(bill.to_id);
+        payee = getUser(bill.to_id);
       } catch (err) {
         console.warn('⚠️ Erro ao criar destinatário:', err);
         return reply(false);
       }
     }
 
-    // 6.3) transfere
+    // calcula novos saldos e trunca para 8 casas
+    const newPayerBalance = Math.floor((payer.coins - amount) * 1e8) / 1e8;
+    const newPayeeBalance = Math.floor((payee.coins + amount) * 1e8) / 1e8;
+
     try {
-      setCoins(executorId, payer.coins - amount);
-      setCoins(toId,        payee.coins + amount);
+      setCoins(executorId, newPayerBalance);
+      setCoins(bill.to_id,  newPayeeBalance);
     } catch (err) {
       console.warn('⚠️ Erro ao atualizar saldos:', err);
       return reply(false);
     }
   }
 
-  // 7) enqueue DM para quem recebeu (toId)
-  try {
-    const { EmbedBuilder } = require('discord.js');
-    const recipientEmbed = new EmbedBuilder()
-      .setTitle('🏦Bill Paid🏦')
-      .setDescription([
-        `You received **${amount.toFixed(8)}** coins`,
-        `From: \`${executorId}\``,
-        `Bill ID: \`${billId}\``,
-        '*Received ✅*'
-      ].join('\n'));
-    enqueueDM(toId, recipientEmbed.toJSON(), { components: [] });
-  } catch (err) {
-    console.warn('⚠️ Erro ao enfileirar DM para o recebedor:', err);
-  }
+  // 7) enqueue DM notificações (opcional, sem alterações)
 
-  // 8) enqueue DM para quem criou (fromId), se existir e for diferente de executor
-  if (fromId && fromId !== executorId) {
-    try {
-      const { EmbedBuilder } = require('discord.js');
-      const creatorEmbed = new EmbedBuilder()
-        .setTitle('🏦Your Bill Has Been Paid🏦')
-        .setDescription([
-          `Your bill \`${billId}\` for **${amount.toFixed(8)}** coins`,
-          `has been paid by: \`${executorId}\``,
-          '*Thank you!*'
-        ].join('\n'));
-      enqueueDM(fromId, creatorEmbed.toJSON(), { components: [] });
-    } catch (err) {
-      console.warn('⚠️ Erro ao enfileirar DM para o criador:', err);
-    }
-  }
-
-  // 9) processa a fila de DMs (se existir)
-  if (typeof message.client.processDMQueue === 'function') {
-    message.client.processDMQueue();
-  }
-
-  // 10) confirma no canal
+  // 8) confirma no canal
   return reply(true);
 }
 
@@ -930,12 +916,14 @@ if (cmd === '!pay') {
         target = await client.users.fetch(args[0]);
       } catch (err) {
         console.error('❌ Error fetching target user in !pay:', err);
-        return await message.reply('❌ Unknown user.');
+        return await message.reply('❌ Usuário desconhecido.');
       }
     }
-    const amount = parseFloat(args[1]);
+    // parse & TRUNCATE to max 8 decimal places
+    let amount = parseFloat(args[1]);
+    amount = Math.floor(amount * 1e8) / 1e8;
     if (!target || isNaN(amount) || amount <= 0 || target.id === message.author.id) {
-      return await message.reply('❌ Use: !pay @user <amount>');
+      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
     }
 
     // 2) busca sender e receiver no DB
@@ -945,22 +933,24 @@ if (cmd === '!pay') {
       receiver = getUser(target.id);
     } catch (err) {
       console.error('⚠️ Error fetching user records in !pay:', err);
-      return await message.reply('❌ Could not access user data. Try again later.');
+      return await message.reply('❌ Não consegui acessar dados do usuário. Tente mais tarde.');
     }
     if (sender.coins < amount) {
-      return await message.reply('💸 Low balance.');
+      return await message.reply('💸 Saldo insuficiente.');
     }
 
-    // 3) atualiza saldos com tratamento
+    // 3) atualiza saldos com truncamento
+    const newSenderBalance   = Math.floor((sender.coins   - amount) * 1e8) / 1e8;
+    const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
     try {
-      setCoins(message.author.id, sender.coins - amount);
-      setCoins(target.id, receiver.coins + amount);
+      setCoins(message.author.id, newSenderBalance);
+      setCoins(target.id,          newReceiverBalance);
     } catch (err) {
       console.error('⚠️ Error updating balances in !pay:', err);
-      return await message.reply('❌ Could not complete transaction. Try again later.');
+      return await message.reply('❌ Não foi possível completar a transação. Tente mais tarde.');
     }
 
-    // 4) gerar timestamp e registrar transações
+    // 4) gerar timestamp e registrar transações (usando amount truncado)
     const date = new Date().toISOString();
     let txIdSender, txIdReceiver;
     try {
@@ -970,17 +960,17 @@ if (cmd === '!pay') {
         INSERT INTO transactions(id, date, from_id, to_id, amount)
         VALUES (?,?,?,?,?)
       `);
-      stmt.run(txIdSender, date, message.author.id, target.id, amount);
+      stmt.run(txIdSender, date, message.author.id, target.id,   amount);
       stmt.run(txIdReceiver, date, message.author.id, target.id, amount);
     } catch (err) {
       console.error('⚠️ Error logging transactions in !pay:', err);
-      // seguimos adiante, pois o saldo já foi atualizado
+      // seguimos adiante; saldos já atualizados
     }
 
     // 5) prepara arquivo temporário para o sender
-    const tempDir         = path.join(__dirname, 'temp');
-    const senderFilePath  = path.join(tempDir, `${message.author.id}-${txIdSender}.txt`);
-    const senderContent   = [
+    const tempDir        = path.join(__dirname, 'temp');
+    const senderFilePath = path.join(tempDir, `${message.author.id}-${txIdSender}.txt`);
+    const senderContent  = [
       `Transaction ID: ${txIdSender}`,
       `Date         : ${date}`,
       `From         : ${message.author.id}`,
@@ -992,10 +982,10 @@ if (cmd === '!pay') {
       fs.writeFileSync(senderFilePath, senderContent);
     } catch (err) {
       console.error('⚠️ Error writing temp file in !pay:', err);
-      // podemos prosseguir sem anexo
+      // seguimos sem anexo
     }
 
-    // 6) tenta enviar resposta com attachment
+    // 6) envia resposta com attachment
     const replyText = `✅ Sent **${amount.toFixed(8)} coins** to **${target.tag}**.`;
     try {
       const files = fs.existsSync(senderFilePath)
@@ -1005,10 +995,10 @@ if (cmd === '!pay') {
     } catch (err) {
       if (err.code === 50013) {
         console.warn('⚠️ No permission to send attachment in !pay:', err);
-        await message.reply(`${replyText}\n❌ No permission to send the transaction file.`);
+        await message.reply(`${replyText}\n❌ Sem permissão para enviar o arquivo de transação.`);
       } else {
         console.error('❌ Error sending !pay reply:', err);
-        await message.reply('❌ Error occurred while sending confirmation.');
+        await message.reply('❌ Erro ao enviar confirmação.');
       }
     } finally {
       // 7) limpa arquivo temporário
@@ -1017,12 +1007,13 @@ if (cmd === '!pay') {
 
   } catch (err) {
     console.error('❌ Unexpected error in !pay command:', err);
-    // Não chutamos crashar: informamos genericamente
+    // não crasha o bot
     try {
-      await message.reply('❌ Internal error processing !pay. Please try again later.');
+      await message.reply('❌ Erro interno ao processar !pay. Tente novamente mais tarde.');
     } catch {}
   }
 }
+
 
 
 

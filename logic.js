@@ -101,11 +101,18 @@ async function getTransactions(userId, page = 1) {
 }
 
 // TRANSFERÊNCIA
-async function transferCoins(userId, sessionId, passwordHash, toId, amount) {
-  if (amount <= 0) throw new Error('Invalid amount');
+async function transferCoins(userId, sessionId, passwordHash, toId, rawAmount) {
+  // 1) parse and truncate amount to max 8 decimal places
+  let amount = parseFloat(rawAmount);
+  amount = Math.floor(amount * 1e8) / 1e8;
+  if (isNaN(amount) || amount <= 0) {
+    throw new Error('Invalid amount');
+  }
 
+  // 2) authenticate user
   const user = await authenticate(userId, sessionId, passwordHash);
 
+  // 3) fetch sender and receiver
   const sender = getUser(userId);
   if (!sender) throw new Error('Sender not found');
   if (sender.coins < amount) throw new Error('Insufficient funds');
@@ -113,17 +120,22 @@ async function transferCoins(userId, sessionId, passwordHash, toId, amount) {
   const receiver = getUser(toId);
   if (!receiver) throw new Error('Receiver not found');
 
-  // Atualiza saldos
-  setCoins(userId, sender.coins - amount);
-  addCoins(toId, amount);
+  // 4) compute new balances with truncation
+  const newSenderBalance   = Math.floor((sender.coins - amount) * 1e8) / 1e8;
+  const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
 
-  // Registra transação
+  // 5) update balances
+  setCoins(userId, newSenderBalance);
+  setCoins(toId,   newReceiverBalance);
+
+  // 6) record transaction
   const date = new Date().toISOString();
   const txId = genUniqueTxId();
-  createTransaction(userId, toId, amount);
+  createTransaction(txId, date, userId, toId, amount);
 
   return { txId, date };
 }
+
 
 // CLAIM
 async function claimCoins(userId, sessionId, passwordHash) {
@@ -278,9 +290,9 @@ async function payBillLogic(executorId, billId) {
     throw new Error('Bill not found');
   }
 
-  // 2) extract & validate
-  const toId   = bill.to_id;
-  const amount = parseFloat(bill.amount);
+  // 2) extract & validate, then TRUNCATE to 8 decimal places
+  let amount = parseFloat(bill.amount);
+  amount = Math.floor(amount * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) {
     throw new Error('Invalid bill amount');
   }
@@ -288,45 +300,46 @@ async function payBillLogic(executorId, billId) {
   // 3) ensure payer exists and has funds
   const payer = getUser(executorId);
   if (!payer || payer.coins < amount) {
-    throw new Error(`Insufficient funds: need ${amount}`);
+    throw new Error(`Insufficient funds: need ${amount.toFixed(8)}`);
   }
 
   // 4) ensure receiver exists (creates them if missing)
-  const receiver = getUser(toId);
+  const receiver = getUser(bill.to_id);
   if (!receiver) {
     throw new Error('Receiver not found');
   }
 
-  // 5) update balances
-  setCoins(executorId, payer.coins - amount);
-  addCoins(toId, receiver.coins + amount);
+  // 5) update balances, truncating each result to 8 decimals
+  const newPayerBalance    = Math.floor((payer.coins - amount) * 1e8) / 1e8;
+  const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
+
+  setCoins(executorId, newPayerBalance);
+  setCoins(bill.to_id, newReceiverBalance);
 
   // 6) log the transaction using the same UUID as the bill
   const nowIso = new Date().toISOString();
   db.prepare(`
     INSERT INTO transactions (id, date, from_id, to_id, amount)
     VALUES (?, ?, ?, ?, ?)
-  `).run(billId, nowIso, executorId, toId, amount);
+  `).run(billId, nowIso, executorId, bill.to_id, amount.toFixed(8));
 
   // 7) enqueue a DM notification to the receiver
   const embedObj = {
     type: 'rich',
-    title: '🏦Bill Paid🏦',
+    title: '🏦 Bill Paid 🏦',
     description: [
-      `**${amount}** coins`,
+      `**${amount.toFixed(8)}** coins`,
       `From: \`${executorId}\``,
       `Bill ID: \`${billId}\``,
       '*Received ✅*'
     ].join('\n')
   };
-  const rowObj = { components: [] };
-  enqueueDM(toId, embedObj, rowObj);
+  enqueueDM(bill.to_id, embedObj, { components: [] });
 
   // 8) remove the paid bill
   deleteBill(billId);
 
-  // return details if you need them
-  return { billId, toId, amount, date: nowIso };
+  return { billId, toId: bill.to_id, amount: amount.toFixed(8), date: nowIso };
 }
 
 async function getBillsTo(userId, page = 1) {
