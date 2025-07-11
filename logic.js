@@ -12,6 +12,7 @@ const {
   createTransaction,
   getTransaction,
   getCooldown,
+  createBill,
   setCooldown,
   wasNotified,
   setNotified,
@@ -21,6 +22,9 @@ const {
   getNextDM,
   deleteDM,
   genUniqueTxId,
+  genUniqueBillId,
+  getBill,
+  deleteBill,
   db
 } = require('./database');
 
@@ -101,34 +105,28 @@ async function getTransactions(userId, page = 1) {
 }
 
 // TRANSFERÊNCIA
-async function transferCoins(userId, sessionId, passwordHash, toId, rawAmount) {
-  // 1) parse and truncate amount to max 8 decimal places
-  let amount = parseFloat(rawAmount);
-  amount = Math.floor(amount * 1e8) / 1e8;
+// TRANSFERÊNCIA (via API — já autenticado pelo middleware)
+async function transferCoins(userId, toId, rawAmount) {
+  // 1) parse e truncate para 8 casas decimais
+  let amount = Math.floor(parseFloat(rawAmount) * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) {
     throw new Error('Invalid amount');
   }
 
-  // 2) authenticate user
-  const user = await authenticate(userId, sessionId, passwordHash);
-
-  // 3) fetch sender and receiver
-  const sender = getUser(userId);
-  if (!sender) throw new Error('Sender not found');
+  // 2) buscar remetente e receptor
+  const sender   = getUser(userId);
+  const receiver = getUser(toId);
+  if (!sender)   throw new Error('Sender not found');
+  if (!receiver) throw new Error('Receiver not found');
   if (sender.coins < amount) throw new Error('Insufficient funds');
 
-  const receiver = getUser(toId);
-  if (!receiver) throw new Error('Receiver not found');
+  // 3) atualizar saldos truncados
+  const newSender   = Math.floor((sender.coins - amount)   * 1e8) / 1e8;
+  const newReceiver = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
+  setCoins(userId,   newSender);
+  setCoins(toId,     newReceiver);
 
-  // 4) compute new balances with truncation
-  const newSenderBalance   = Math.floor((sender.coins - amount) * 1e8) / 1e8;
-  const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
-
-  // 5) update balances
-  setCoins(userId, newSenderBalance);
-  setCoins(toId,   newReceiverBalance);
-
-  // 6) record transaction
+  // 4) registrar transação
   const date = new Date().toISOString();
   const txId = genUniqueTxId();
   createTransaction(txId, date, userId, toId, amount);
@@ -142,23 +140,35 @@ async function claimCoins(userId, sessionId, passwordHash) {
   const user = await authenticate(userId, sessionId, passwordHash);
 
   const last = getCooldown(userId);
-  const now = Date.now();
+  const now  = Date.now();
 
   // Valor do claim e cooldown fixos (ajuste conforme seu config)
-  const claimValue = 1;
-  const claimCooldown = 24 * 60 * 60 * 1000; // 24h
+  const claimValue     = 1;
+  const claimCooldown  = 24 * 60 * 60 * 1000; // 24h
 
-  if (now - last < claimCooldown) throw new Error('Cooldown active');
+  if (now - last < claimCooldown) {
+    throw new Error('Cooldown active');
+  }
 
+  // Concede coins e atualiza cooldown/notified
   addCoins(userId, claimValue);
   setCooldown(userId, now);
   setNotified(userId, false);
 
-  // Log da transação (de "null" para o usuário)
-  createTransaction('000000000000', userId, claimValue);
+  // Log da transação (de "sistema" para o usuário)
+  const txId   = '000000000000';  
+  const txDate = new Date(now).toISOString();
+  createTransaction(
+    txId,         // id fixo do claim
+    txDate,       // timestamp ISO
+    null,         // from_id (reivindicação do sistema)
+    userId,       // to_id (quem recebe)
+    claimValue    // amount
+  );
 
   return true;
 }
+
 
 // GET CARTÃO (usa função corrigida para pegar o código pelo ID do dono)
 async function getCardCode(userId) {
@@ -263,17 +273,40 @@ async function updateUserInfo(userId, username, passwordHash) {
 // called by POST /api/bill/create
 // fromId: who opens the bill (may be ''), toId: who will pay it,
 // amount: string or number, timestamp (ms) optional
-async function createBillLogic(fromId, toId, amount, timestamp = Date.now()) {
-  if (!toId || !amount) {
-    throw new Error('Missing parameters for createBill');
+function parseDuration(str) {
+  const m = /^(\d+)([smhd])$/.exec(str);
+  if (!m) return null;
+  const [ , n, unit ] = m;
+  const num = parseInt(n, 10);
+  switch (unit) {
+    case 's': return num * 1000;
+    case 'm': return num * 60 * 1000;
+    case 'h': return num * 60 * 60 * 1000;
+    case 'd': return num * 24 * 60 * 60 * 1000;
   }
-  // ensure we store all decimals as text
-  const amtText = amount.toString();
-  const ts = Number(timestamp) || Date.now();
-  // this will generate a unique bill_id and INSERT into bills
-  const billId = dbCreateBill(fromId || '', toId, amtText, ts);
-  return billId;
 }
+
+async function createBillLogic(fromId, toId, amountStr, time) {
+  // 1) interpreta duration ou timestamp
+  let date;
+  if (typeof time === 'string') {
+    const delta = parseDuration(time);
+    if (!delta) throw new Error('Invalid time format for bill expiration');
+    date = Date.now() + delta;
+  } else if (typeof time === 'number') {
+    date = time;
+  } else {
+    date = Date.now();
+  }
+
+  // 2) chama a função CORRETA do database.js
+  //    (ela gera o billId internamente e retorna esse valor)
+  const billId = createBill(fromId || '', toId, amountStr, date);
+
+  // 3) devolve exatamente esse ID
+  return { success: true, billId };
+}
+
 
 // — New: pay a bill —
 // called by POST /api/bill/pay (after authMiddleware)
@@ -342,16 +375,20 @@ async function payBillLogic(executorId, billId) {
   return { billId, toId: bill.to_id, amount: amount.toFixed(8), date: nowIso };
 }
 
+// Lógico de listagem de faturas a pagar
 async function getBillsTo(userId, page = 1) {
   const limit  = 20;
   const offset = (page - 1) * limit;
-  return db.prepare(`
-    SELECT bill_id AS id, from_id, to_id, amount, date
-    FROM bills
-    WHERE to_id = ?
-    ORDER BY date DESC
-    LIMIT ? OFFSET ?
-  `).all(userId, limit, offset);
+  const rows = db
+    .prepare('SELECT bill_id AS id, from_id, to_id, amount, date FROM bills WHERE to_id = ? ORDER BY date DESC LIMIT ? OFFSET ?')
+    .all(userId, limit, offset);
+  return rows.map(r => ({
+    id:     r.id,
+    from_id: r.from_id,
+    to_id:   r.to_id,
+    amount:  r.amount,
+    date:    r.date
+  }));
 }
 
 async function getBillsFrom(userId, page = 1) {
@@ -369,6 +406,8 @@ async function getBillsFrom(userId, page = 1) {
 module.exports = {
   authenticate,
   login,
+  getBillsTo,
+  getBillsFrom,
   getUserIdByUsername,
   getSaldo,
   getTransactions,

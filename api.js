@@ -142,8 +142,8 @@ function startApiServer() {
   app.post('/api/bill/list', authMiddleware, async (req, res) => {
     const page = Math.max(1, parseInt(req.body.page, 10) || 1);
     try {
-      const toPay     = await logic.getBillsTo(req.userId, page);
-      const toReceive = await logic.getBillsFrom(req.userId, page);
+    const toPay = await logic.getBillsTo(req.userId, page);
+    const toReceive = await logic.getBillsFrom(req.userId, page);
       return res.json({ toPay, toReceive, page });
     } catch (e) {
       console.error('List bills error:', e);
@@ -151,20 +151,59 @@ function startApiServer() {
     }
   });
 
-  // — Criar nova bill (exige autenticação) —
-  app.post('/api/bill/create', authMiddleware, async (req, res) => {
-    const { toId, fromId, amount, time } = req.body || {};
-    if (!toId || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid parameters' });
-    }
-    try {
-      const billId = await logic.createBill(fromId, toId, amount, time);
-      return res.json({ success: true, billId });
-    } catch (e) {
-      console.error('Bill create error:', e);
-      return res.status(500).json({ error: 'operation failed' });
-    }
-  });
+  // — Histórico de transações (paginação) —
+app.get('/api/transactions', authMiddleware, async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  try {
+    const txs = await logic.getTransactions(req.userId, page);
+    return res.json({ transactions: txs, page });
+  } catch (e) {
+    console.error('Get transactions error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// — New: create a bill —
+// called by POST /api/bill/create
+// fromId: quem abre a fatura (pode ser vazio), toId: quem deverá pagar,
+// amountStr: string ou number, time: timestamp (ms) opcional ou string de duração
+async function createBillLogic(fromId, toId, amountStr, time) {
+  // 1) calcula o timestamp de expiração
+  let date;
+  if (typeof time === 'string') {
+    const delta = parseDuration(time);
+    if (!delta) throw new Error('Invalid time format for bill expiration');
+    date = Date.now() + delta;
+  } else if (typeof time === 'number') {
+    date = time;
+  } else {
+    date = Date.now();
+  }
+
+  // 2) chama createBill do database, que retorna o billId realmente gravado
+  //    assinatura em database.js: createBill(fromId, toId, amountStr, timestamp)
+  const billId = createBill(fromId, toId, amountStr, date);
+
+  // 3) devolve este ID exato
+  return { success: true, billId };
+}
+
+// — Criar nova fatura (exige autenticação) —
+app.post('/api/bill/create', authMiddleware, async (req, res) => {
+  const { fromId, toId, amount, time } = req.body || {};
+  if (!toId || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
+  try {
+    // chama a função de negócio exportada por logic.js
+    const { success, billId } = await logic.createBill(fromId, toId, amount, time);
+    return res.json({ success, billId });
+  } catch (e) {
+    console.error('Bill create error:', e);
+    return res.status(400).json({ error: e.message });
+  }
+});
+
 
   // — Pagar bill (exige autenticação) —
   app.post('/api/bill/pay', authMiddleware, async (req, res) => {
@@ -186,6 +225,17 @@ function startApiServer() {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal server error' });
   });
+
+  // — SALDO do usuário (exige autenticação) —
+app.get('/api/user/:userId/saldo', authMiddleware, async (req, res) => {
+  try {
+    const coins = await logic.getSaldo(req.userId);
+    return res.json({ coins });
+  } catch (e) {
+    console.error('Get saldo error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
 
   const port = process.env.API_PORT || 1033;
   app.listen(port, () => {

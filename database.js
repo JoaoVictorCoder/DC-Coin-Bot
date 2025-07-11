@@ -82,6 +82,16 @@ db.exec(`
     date    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+    /* <<< ADICIONE ISSO >>> */
+  CREATE TABLE IF NOT EXISTS bills (
+    bill_id TEXT    PRIMARY KEY,
+    from_id TEXT,
+    to_id   TEXT    NOT NULL,
+    amount  TEXT    NOT NULL,
+    date    INTEGER NOT NULL,
+    FOREIGN KEY(from_id) REFERENCES users(id),
+    FOREIGN KEY(to_id)   REFERENCES users(id)
+  );
 `);
 
 function createBackup(userId, code) {

@@ -626,6 +626,7 @@ if (cmd === '!bill' && args.length >= 3) {
 
 // … dentro do seu client.on('messageCreate', async message => { … } )…
 
+// dentro do seu handler de mensagem
 if (cmd === '!paybill' && args.length >= 1) {
   const billId     = args[0];
   const apiChannel = message.channel;
@@ -654,7 +655,6 @@ if (cmd === '!paybill' && args.length >= 1) {
 
   // 2) extrai e trunca o valor para 8 casas decimais
   let amount = parseFloat(bill.amount);
-  // descarta tudo além de 8 casas decimais
   amount = Math.floor(amount * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) return reply(false);
 
@@ -688,39 +688,44 @@ if (cmd === '!paybill' && args.length >= 1) {
     console.warn('⚠️ Erro ao deletar bill:', err);
   }
 
-  // 6) se não for self-pay, atualiza saldos também truncando após operação
+  // 6) atualiza saldos se não for self-pay
   if (executorId !== bill.to_id) {
-    let payee = null;
+    let payee;
     try {
-      payee = getUser(bill.to_id);
-    } catch {
-      payee = null;
-    }
-    if (!payee) {
-      try {
-        createUser(bill.to_id);
-        payee = getUser(bill.to_id);
-      } catch (err) {
-        console.warn('⚠️ Erro ao criar destinatário:', err);
-        return reply(false);
-      }
+      payee = getUser(bill.to_id) || (() => { createUser(bill.to_id); return getUser(bill.to_id); })();
+    } catch (err) {
+      console.warn('⚠️ Erro ao garantir payee:', err);
+      return reply(false);
     }
 
-    // calcula novos saldos e trunca para 8 casas
     const newPayerBalance = Math.floor((payer.coins - amount) * 1e8) / 1e8;
     const newPayeeBalance = Math.floor((payee.coins + amount) * 1e8) / 1e8;
-
     try {
       setCoins(executorId, newPayerBalance);
-      setCoins(bill.to_id,  newPayeeBalance);
+      setCoins(bill.to_id, newPayeeBalance);
     } catch (err) {
       console.warn('⚠️ Erro ao atualizar saldos:', err);
       return reply(false);
     }
+
+    // 7) enqueue DM de notificação para o destinatário
+    const embedObj = {
+      type: 'rich',
+      title: '🏦 Bill Paid 🏦',
+      description: [
+        `**${amount.toFixed(8)}** coins`,
+        `From: \`${executorId}\``,
+        `Bill ID: \`${billId}\``,
+        '*Received ✅*'
+      ].join('\n')
+    };
+    try {
+      enqueueDM(bill.to_id, embedObj, { components: [] });
+      processDMQueue();
+    } catch (err) {
+      console.warn('⚠️ Erro ao enfileirar DM:', err);
+    }
   }
-
-  // 7) enqueue DM notificações (opcional, sem alterações)
-
   // 8) confirma no canal
   return reply(true);
 }
