@@ -1,25 +1,42 @@
 const express = require('express');
 const logic = require('./logic'); // exporta: login, transferCoins, claimCoins, getCardCode, resetUserCard, createBackup, listBackups, restoreBackup, updateUser, createBill, payBill, getBillsTo, getBillsFrom
-const { getSession } = require('./database');
+const { 
+  getSession,
+  deleteSession,
+  createSession,
+} = require('./database');
+const crypto = require('crypto');
 
 function startApiServer() {
   const app = express();
   app.use(express.json());
 
   // — LOGIN (gera sessão) —
-  app.post('/api/login', async (req, res) => {
-    const { username, passwordHash } = req.body || {};
-    if (!username || !passwordHash) {
-      return res.status(400).json({ sessionCreated: false, passwordCorrect: false });
-    }
-    try {
-      const loginResult = await logic.login(username, passwordHash);
-      return res.json(loginResult);
-    } catch (e) {
-      console.error('Login error:', e);
-      return res.status(500).json({ sessionCreated: false, passwordCorrect: false });
-    }
-  });
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ sessionCreated: false, passwordCorrect: false });
+  }
+
+  // Gera o hash SHA-256 da senha
+  let passwordHash;
+  try {
+    passwordHash = crypto.createHash('sha256')
+                         .update(password)
+                         .digest('hex');
+  } catch (err) {
+    console.error('Error hashing password:', err);
+    return res.status(500).json({ sessionCreated: false, passwordCorrect: false });
+  }
+
+  try {
+    const loginResult = await logic.login(username, passwordHash);
+    return res.json(loginResult);
+  } catch (e) {
+    console.error('Login error:', e);
+    return res.status(500).json({ sessionCreated: false, passwordCorrect: false });
+  }
+});
 
   // — Autenticação via Bearer token —
   function authMiddleware(req, res, next) {
@@ -37,6 +54,67 @@ function startApiServer() {
     next();
   }
 
+  // POST /api/logout — deleta apenas a sessão atual
+app.post('/api/logout', authMiddleware, (req, res) => {
+  const token = req.headers.authorization.split(' ')[1];
+  deleteSession(token);
+  return res.json({ success: true });
+});
+
+// POST /api/account/change — requer body { username?, password }
+app.post('/api/account/change', authMiddleware, async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!password) {
+    return res.status(400).json({ error: 'Missing password' });
+  }
+  // gera hash SHA-256 da nova senha
+  const passwordHash = crypto.createHash('sha256')
+                             .update(password)
+                             .digest('hex');
+  try {
+    // updateUserInfo está exportado de logic.js
+    await logic.updateUserInfo(req.userId, username || undefined, passwordHash);
+    // depois de alterar, derruba a sessão
+    const token = req.headers.authorization.split(' ')[1];
+    deleteSession(token);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Change credentials error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// POST /api/account/unregister — remove credenciais do usuário
+app.post('/api/account/unregister', authMiddleware, async (req, res) => {
+  try {
+    // unregisterUser deve estar exportado em logic.js
+    await logic.unregisterUser(req.userId, req.headers.authorization.split(' ')[1]);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('Unregister error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// POST /api/register — cria conta e já retorna sessionId
+app.post('/api/register', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  try {
+    // 1) registra usuário
+    const userId = await logic.registerUser(username, password);
+    // 2) cria sessão nova
+    const sessionId = createSession(userId);
+    return res.json({ success: true, userId, sessionId });
+  } catch (err) {
+    console.error('Register error:', err);
+    return res.status(500).json({ error: err.message || 'Internal error' });
+  }
+});
+
+
   // — TRANSFERIR (exige autenticação) —
   app.post('/api/transfer', authMiddleware, async (req, res) => {
     const { toId, amount } = req.body || {};
@@ -53,15 +131,75 @@ function startApiServer() {
   });
 
   // — CLAIM (exige autenticação) —
-  app.post('/api/claim', authMiddleware, async (req, res) => {
-    try {
-      await logic.claimCoins(req.userId);
-      return res.json({ success: true });
-    } catch (e) {
-      console.error('Claim error:', e);
-      return res.status(400).json({ error: 'operation failed' });
+app.post('/api/claim', authMiddleware, async (req, res) => {
+  try {
+    const result = await logic.claimCoins(req.userId);
+    // { success: true, claimed: X }
+    return res.json(result);
+  } catch (e) {
+    console.error('Claim error:', e);
+
+    if (e.message === 'Cooldown active') {
+      // calcula tempo restante
+      const last = logic.getCooldown(req.userId);  // timestamp ms do último claim
+      const now  = Date.now();
+      const remainingMs = Math.max(0, last + 24*60*60*1000 - now);
+
+      return res.status(429).json({
+        error: 'Cooldown active',
+        nextClaimInMs: remainingMs
+      });
     }
-  });
+
+    // outros erros
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// — STATUS DO COOLDOWN DE CLAIM (exige autenticação) —
+app.get('/api/claim/status', authMiddleware, async (req, res) => {
+  try {
+    // Timestamp do último claim
+    const last = await logic.getCooldown(req.userId);
+    const now  = Date.now();
+    const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    // Quanto falta para liberar (em ms)
+    const remainingMs = Math.max(0, COOLDOWN_MS - (now - last));
+    // Retorna também o timestamp do último claim
+    return res.json({
+      cooldownRemainingMs: remainingMs,
+      lastClaimTimestamp: last
+    });
+  } catch (err) {
+    console.error('❌ Claim status error:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+
+// — CLAIM (exige autenticação) —
+app.post('/api/claim', authMiddleware, async (req, res) => {
+  try {
+    const result = await logic.claimCoins(req.userId); 
+    // { success: true, claimed: X }
+    return res.json(result);
+  } catch (e) {
+    console.error('❌ Claim error:', e);
+    if (e.message === 'Cooldown active') {
+      // Recalcula tempo restante para o front exibir
+      const last = await logic.getCooldown(req.userId);
+      const now  = Date.now();
+      const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+      const remainingMs = Math.max(0, COOLDOWN_MS - (now - last));
+      return res.status(429).json({
+        error: 'Cooldown active',
+        nextClaimInMs: remainingMs
+      });
+    }
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 
   // — Ver cartão do usuário (exige autenticação) —
   app.post('/api/card', authMiddleware, async (req, res) => {
@@ -139,17 +277,51 @@ function startApiServer() {
   });
 
   // — LISTAR BILLS “a pagar” e “a receber” (exige autenticação) —
-  app.post('/api/bill/list', authMiddleware, async (req, res) => {
-    const page = Math.max(1, parseInt(req.body.page, 10) || 1);
-    try {
+app.post('/api/bill/list', authMiddleware, async (req, res) => {
+  const page = Math.max(1, parseInt(req.body.page, 10) || 1);
+
+  try {
+    // faturas que você deve pagar (from: outro_ID → to: seu_ID)
     const toPay = await logic.getBillsTo(req.userId, page);
+
+    // faturas que você vai receber (from: seu_ID → to: outro_ID)
     const toReceive = await logic.getBillsFrom(req.userId, page);
-      return res.json({ toPay, toReceive, page });
-    } catch (e) {
-      console.error('List bills error:', e);
-      return res.status(500).json({ error: 'Internal error' });
-    }
-  });
+
+    return res.json({ toPay, toReceive, page });
+  } catch (e) {
+    console.error('List bills error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+app.post('/api/bill/list/from', authMiddleware, async (req, res) => {
+  const page = Math.max(1, parseInt(req.body.page, 10) || 1);
+
+  try {
+    // faturas que você deve pagar (from: outro_ID → to: seu_ID)
+    const toPay = await logic.getBillsTo(req.userId, page);
+
+    return res.json({ toPay, page });
+  } catch (e) {
+    console.error('List bills to pay error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+app.post('/api/bill/list/to', authMiddleware, async (req, res) => {
+  const page = Math.max(1, parseInt(req.body.page, 10) || 1);
+
+  try {
+    // faturas que você vai receber (from: seu_ID → to: outro_ID)
+    const toReceive = await logic.getBillsFrom(req.userId, page);
+
+    return res.json({ toReceive, page });
+  } catch (e) {
+    console.error('List bills to receive error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 
   // — Histórico de transações (paginação) —
 app.get('/api/transactions', authMiddleware, async (req, res) => {
@@ -227,7 +399,7 @@ app.post('/api/bill/create', authMiddleware, async (req, res) => {
   });
 
   // — SALDO do usuário (exige autenticação) —
-app.get('/api/user/:userId/saldo', authMiddleware, async (req, res) => {
+app.get('/api/user/:userId/balance', authMiddleware, async (req, res) => {
   try {
     const coins = await logic.getSaldo(req.userId);
     return res.json({ coins });
@@ -237,9 +409,31 @@ app.get('/api/user/:userId/saldo', authMiddleware, async (req, res) => {
   }
 });
 
+
+
+
+
+const path    = require('path');
+const fs      = require('fs-extra');
+const SITE_DIR = path.join(__dirname, 'site');
+const INDEX_HTML = path.join(SITE_DIR, 'index.html');
+fs.ensureDirSync(SITE_DIR);
+
+// Rota fixa para carregar o index.html diretamente
+app.use('/site', express.static(SITE_DIR));
+
+// Se quiser também que /site/ retorne index.html
+app.get('/site/', (req, res) => {
+  res.sendFile(INDEX_HTML);
+});
+
+
+
+
+
   const port = process.env.API_PORT || 1033;
   app.listen(port, () => {
-    console.log(`API REST rodando na porta ${port}`);
+    console.log(`API REST running on port ${port}`);
   });
 }
 

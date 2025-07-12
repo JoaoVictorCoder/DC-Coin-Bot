@@ -915,27 +915,42 @@ if (cmd === '!api') {
 if (cmd === '!pay') {
   try {
     // 1) parse & validate target & amount
-    let target = message.mentions.users.first();
-    if (!target && args[0]) {
+    let targetId;
+    let targetTag;
+    const mention = message.mentions.users.first();
+    if (mention) {
+      targetId = mention.id;
+      targetTag = mention.tag;
+    } else if (args[0]) {
+      targetId = args[0];
       try {
-        target = await client.users.fetch(args[0]);
-      } catch (err) {
-        console.error('❌ Error fetching target user in !pay:', err);
-        return await message.reply('❌ Usuário desconhecido.');
+        const fetched = await client.users.fetch(targetId);
+        targetTag = fetched.tag;
+      } catch {
+        // fallback: allow if ID exists in our DB even if not a Discord user
+        const dbUser = getUser(targetId);
+        if (dbUser) {
+          targetTag = `User(${targetId})`;
+        } else {
+          return await message.reply('❌ Usuário desconhecido.');
+        }
       }
-    }
-    // parse & TRUNCATE to max 8 decimal places
-    let amount = parseFloat(args[1]);
-    amount = Math.floor(amount * 1e8) / 1e8;
-    if (!target || isNaN(amount) || amount <= 0 || target.id === message.author.id) {
+    } else {
       return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
     }
 
-    // 2) busca sender e receiver no DB
+    // parse & TRUNCATE to max 8 decimal places
+    let amount = parseFloat(args[1]);
+    amount = Math.floor(amount * 1e8) / 1e8;
+    if (isNaN(amount) || amount <= 0 || targetId === message.author.id) {
+      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+    }
+
+    // 2) fetch sender and receiver from DB
     let sender, receiver;
     try {
       sender   = getUser(message.author.id);
-      receiver = getUser(target.id);
+      receiver = getUser(targetId);
     } catch (err) {
       console.error('⚠️ Error fetching user records in !pay:', err);
       return await message.reply('❌ Não consegui acessar dados do usuário. Tente mais tarde.');
@@ -944,82 +959,43 @@ if (cmd === '!pay') {
       return await message.reply('💸 Saldo insuficiente.');
     }
 
-    // 3) atualiza saldos com truncamento
+    // 3) update balances
     const newSenderBalance   = Math.floor((sender.coins   - amount) * 1e8) / 1e8;
     const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
     try {
       setCoins(message.author.id, newSenderBalance);
-      setCoins(target.id,          newReceiverBalance);
+      setCoins(targetId,          newReceiverBalance);
     } catch (err) {
       console.error('⚠️ Error updating balances in !pay:', err);
       return await message.reply('❌ Não foi possível completar a transação. Tente mais tarde.');
     }
 
-    // 4) gerar timestamp e registrar transações (usando amount truncado)
+    // 4) log transactions
     const date = new Date().toISOString();
-    let txIdSender, txIdReceiver;
+    const txIdSender   = genUniqueTxId();
+    const txIdReceiver = genUniqueTxId();
     try {
-      txIdSender   = genUniqueTxId();
-      txIdReceiver = genUniqueTxId();
-      const stmt    = db.prepare(`
+      const stmt = db.prepare(`
         INSERT INTO transactions(id, date, from_id, to_id, amount)
         VALUES (?,?,?,?,?)
       `);
-      stmt.run(txIdSender, date, message.author.id, target.id,   amount);
-      stmt.run(txIdReceiver, date, message.author.id, target.id, amount);
+      stmt.run(txIdSender, date, message.author.id, targetId,   amount);
+      stmt.run(txIdReceiver, date, message.author.id, targetId, amount);
     } catch (err) {
       console.error('⚠️ Error logging transactions in !pay:', err);
-      // seguimos adiante; saldos já atualizados
     }
 
-    // 5) prepara arquivo temporário para o sender
-    const tempDir        = path.join(__dirname, 'temp');
-    const senderFilePath = path.join(tempDir, `${message.author.id}-${txIdSender}.txt`);
-    const senderContent  = [
-      `Transaction ID: ${txIdSender}`,
-      `Date         : ${date}`,
-      `From         : ${message.author.id}`,
-      `To           : ${target.id}`,
-      `Amount       : ${amount.toFixed(8)} coins`
-    ].join(os.EOL);
-    try {
-      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-      fs.writeFileSync(senderFilePath, senderContent);
-    } catch (err) {
-      console.error('⚠️ Error writing temp file in !pay:', err);
-      // seguimos sem anexo
-    }
-
-    // 6) envia resposta com attachment
-    const replyText = `✅ Sent **${amount.toFixed(8)} coins** to **${target.tag}**.`;
-    try {
-      const files = fs.existsSync(senderFilePath)
-        ? [ new AttachmentBuilder(senderFilePath, { name: `${message.author.id}-${txIdSender}.txt` }) ]
-        : [];
-      await message.reply({ content: replyText, files });
-    } catch (err) {
-      if (err.code === 50013) {
-        console.warn('⚠️ No permission to send attachment in !pay:', err);
-        await message.reply(`${replyText}\n❌ Sem permissão para enviar o arquivo de transação.`);
-      } else {
-        console.error('❌ Error sending !pay reply:', err);
-        await message.reply('❌ Erro ao enviar confirmação.');
-      }
-    } finally {
-      // 7) limpa arquivo temporário
-      try { fs.unlinkSync(senderFilePath); } catch {}
-    }
+    // 5) prepare and send confirmation
+    const replyText = `✅ Sent **${amount.toFixed(8)} coins** to **${targetTag}**.`;
+    await message.reply(replyText);
 
   } catch (err) {
     console.error('❌ Unexpected error in !pay command:', err);
-    // não crasha o bot
     try {
       await message.reply('❌ Erro interno ao processar !pay. Tente novamente mais tarde.');
     } catch {}
   }
 }
-
-
 
 
 
@@ -1614,49 +1590,57 @@ if (cmd === '!claim') {
 
 if (cmd === '!rank') {
   try {
-    // Obtém todos os usuários do banco
+    // 1) get all accounts
     const todos = getAllUsers();
     const totalAccounts = todos.length;
 
-    // Ordena por saldo e pega os 25 mais ricos
+    // 2) sort by coins desc, take top 25
     const top25 = [...todos]
       .sort((a, b) => b.coins - a.coins)
       .slice(0, 25);
 
     let descricao = '';
-    let totalTop = 0;
-
-    // Monta a descrição do embed
+    // 3) build description
     for (let i = 0; i < top25.length; i++) {
       const entry = top25[i];
-      totalTop += entry.coins;
+      const dbRecord = getUser(entry.id);
+      let displayName;
 
-      // Busca a tag do usuário
-      const user = await client.users.fetch(entry.id).catch(() => null);
-      descricao += `**${i + 1}.** ${user?.tag || 'Desconhecido'} — **${entry.coins.toFixed(8)} coins**\n`;
+      if (dbRecord && dbRecord.username) {
+        displayName = dbRecord.username;
+      } else {
+        try {
+          const user = await client.users.fetch(entry.id);
+          displayName = user.tag;
+        } catch {
+          displayName = entry.id;
+        }
+      }
+
+      descricao += `**${i + 1}.** ${displayName} — **${entry.coins.toFixed(8)} coins**\n`;
     }
 
-    // Soma o total da economia completa
+    // 4) total economy
     const totalEconomy = todos.reduce((acc, cur) => acc + cur.coins, 0);
-
     descricao += `\n💰 **Global:** ${totalEconomy.toFixed(8)} **coins**`;
     descricao += `\n**Total Accounts:** ${totalAccounts} **users**`;
 
-    // Envia o embed
-    return await message.reply({
+    // 5) send embed
+    await message.reply({
       embeds: [
         new EmbedBuilder()
           .setColor('Blue')
           .setTitle('🏆 TOP 25')
-          .setDescription(descricao || 'Any coins users yet.')
+          .setDescription(descricao || 'No coin holders yet.')
       ]
     });
+
   } catch (err) {
     console.error('❌ Command error !rank:', err);
     try {
       await message.reply('❌ Error !rank. Try again later.');
     } catch (sendErr) {
-      console.error('❌ Error message send failure of !rank:', sendErr);
+      console.error('❌ Error sending !rank error message:', sendErr);
     }
   }
 }

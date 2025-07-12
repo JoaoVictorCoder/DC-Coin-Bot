@@ -1,17 +1,17 @@
 const {
   getUser,
+  deleteSession,
   getUserByUsername,
   createUser,
   updateUser,
   createSession,
   getSession,
-  deleteSession,
   getSessionsByUserId,
   addCoins,
   setCoins,
   createTransaction,
+  genAndCreateTransaction,
   getTransaction,
-  getCooldown,
   createBill,
   setCooldown,
   wasNotified,
@@ -25,10 +25,12 @@ const {
   genUniqueBillId,
   getBill,
   deleteBill,
+  dbGetCooldown,
   db
 } = require('./database');
 
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
 // Helper para verificar hash de senha
 function verifyPassword(user, passwordHash) {
@@ -93,6 +95,67 @@ async function getSaldo(userId) {
   return user.coins || 0;
 }
 
+function generateNumericId(length) {
+  let id = '';
+  for (let i = 0; i < length; i++) {
+    id += Math.floor(Math.random() * 10).toString();
+  }
+  return id;
+}
+
+
+/**
+ * Retorna o timestamp (ms) do último claim para o usuário.
+ */
+async function getCooldown(userId) {
+  return dbGetCooldown(userId);
+}
+
+
+/**
+ * Registra um novo usuário caso username não exista.
+ * - Gera um userId numérico único, começando com 18 dígitos e aumentando se houver colisão.
+ * - Insere na tabela users com senha hash (SHA-256).
+ * - Inicializa cooldown no timestamp atual.
+ * - Gera 12 backups e um cartão novo.
+ */
+async function registerUser(username, password) {
+  // 1) Não permitir username duplicado
+  if (getUserByUsername(username)) {
+    throw new Error('Username already taken');
+  }
+  // 2) Hash da senha
+  const passwordHash = crypto.createHash('sha256')
+                             .update(password)
+                             .digest('hex');
+
+  // 3) Gerar userId único
+  let length = 18;
+  let userId;
+  while (true) {
+    userId = generateNumericId(length);
+    const exists = db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId);
+    if (!exists) break;
+    // se esgotou todo o espaço possível, aumenta o tamanho e tenta de novo
+    length++;
+  }
+
+  // 4) Criar usuário no banco
+  createUser(userId, username, passwordHash);
+
+  // 5) Inicializar cooldown agora
+  const now = Date.now();
+  db.prepare('UPDATE users SET cooldown = ? WHERE id = ?').run(now, userId);
+
+  // 6) Gerar 12 backups
+  await createBackup(userId);
+
+  // 7) Gerar cartão inicial
+  resetCard(userId);
+
+  return userId;
+}
+
 // TRANSAÇÕES (paginação)
 async function getTransactions(userId, page = 1) {
   const limit = 20;
@@ -104,47 +167,87 @@ async function getTransactions(userId, page = 1) {
   return stmt.all(userId, userId, limit, offset);
 }
 
+/**
+ * Limpa username e senha do usuário e deleta a sessão informada.
+ */
+async function unregisterUser(userId, sessionId) {
+  // 1) limpa username e senha
+  db.prepare('UPDATE users SET username = NULL, password = NULL WHERE id = ?')
+    .run(userId);
+  // 2) deleta a sessão atual
+  deleteSession(sessionId);
+  return true;
+}
+
 // TRANSFERÊNCIA
 // TRANSFERÊNCIA (via API — já autenticado pelo middleware)
 async function transferCoins(userId, toId, rawAmount) {
-  // 1) parse e truncate para 8 casas decimais
-  let amount = Math.floor(parseFloat(rawAmount) * 1e8) / 1e8;
-  if (isNaN(amount) || amount <= 0) {
+  // 0) evita self-transfer: nada acontece se enviar para si mesmo
+  if (userId === toId) {
+    // retorna sem debitar, creditar ou criar transação
+    return { txId: null, date: null };
+  }
+
+  // 1) converte para inteiro de satoshis
+  const amountInt = toInt(rawAmount);
+  if (!Number.isInteger(amountInt) || amountInt <= 0) {
     throw new Error('Invalid amount');
   }
 
-  // 2) buscar remetente e receptor
-  const sender   = getUser(userId);
-  const receiver = getUser(toId);
-  if (!sender)   throw new Error('Sender not found');
-  if (!receiver) throw new Error('Receiver not found');
-  if (sender.coins < amount) throw new Error('Insufficient funds');
+  // 2) buscar remetente
+  const sender = getUser(userId);
+  if (!sender) {
+    throw new Error('Sender not found');
+  }
+  // pega saldo inteiro
+  const senderInt = toInt(sender.coins);
+  if (senderInt < amountInt) {
+    throw new Error('Insufficient funds');
+  }
 
-  // 3) atualizar saldos truncados
-  const newSender   = Math.floor((sender.coins - amount)   * 1e8) / 1e8;
-  const newReceiver = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
-  setCoins(userId,   newSender);
-  setCoins(toId,     newReceiver);
+  // 3) buscar ou criar receptor
+  let receiver = getUser(toId);
+  if (!receiver) {
+    createUser(toId, null, null);
+    receiver = getUser(toId);
+  }
+  const receiverInt = toInt(receiver.coins);
 
-  // 4) registrar transação
-  const date = new Date().toISOString();
-  const txId = genUniqueTxId();
-  createTransaction(txId, date, userId, toId, amount);
+  // 4) calcula novos saldos em inteiro
+  const newSenderInt   = senderInt - amountInt;
+  const newReceiverInt = receiverInt + amountInt;
 
+  // 5) atomiza débito, crédito e registro
+  const transferTxn = db.transaction(() => {
+    db.prepare('UPDATE users SET coins = ? WHERE id = ?')
+      .run(fromInt(newSenderInt), userId);
+
+    db.prepare('UPDATE users SET coins = ? WHERE id = ?')
+      .run(fromInt(newReceiverInt), toId);
+
+    // registra transação
+    return genAndCreateTransaction(
+      userId,
+      toId,
+      fromInt(amountInt).toFixed(8)
+    );
+  });
+
+  const { txId, date } = transferTxn();
   return { txId, date };
 }
 
 
-// CLAIM
-async function claimCoins(userId, sessionId, passwordHash) {
-  const user = await authenticate(userId, sessionId, passwordHash);
 
+// CLAIM
+async function claimCoins(userId) {
   const last = getCooldown(userId);
   const now  = Date.now();
+  const claim_amount = '000000000000';
 
-  // Valor do claim e cooldown fixos (ajuste conforme seu config)
-  const claimValue     = 1;
-  const claimCooldown  = 24 * 60 * 60 * 1000; // 24h
+  // Valor do claim e cooldown fixos (24h)
+  const claimValue    = 1;
+  const claimCooldown = 24 * 60 * 60 * 1000;
 
   if (now - last < claimCooldown) {
     throw new Error('Cooldown active');
@@ -155,18 +258,15 @@ async function claimCoins(userId, sessionId, passwordHash) {
   setCooldown(userId, now);
   setNotified(userId, false);
 
-  // Log da transação (de "sistema" para o usuário)
-  const txId   = '000000000000';  
-  const txDate = new Date(now).toISOString();
-  createTransaction(
-    txId,         // id fixo do claim
-    txDate,       // timestamp ISO
-    null,         // from_id (reivindicação do sistema)
-    userId,       // to_id (quem recebe)
-    claimValue    // amount
+  // Registra a transação corretamente:
+  // de null (sistema) para o usuário, no valor claimValue
+  genAndCreateTransaction(
+    claim_amount,       // from_id (sistema)
+    userId,     // to_id (quem recebe)
+    claimValue  // amount
   );
 
-  return true;
+  return { success: true, claimed: claimValue };
 }
 
 
@@ -192,8 +292,8 @@ async function createBackup(userId) {
   const toCreate = 12 - backups.length;
 
   for (let i = 0; i < toCreate; i++) {
-    // Cria código aleatório
-    const code = crypto.randomBytes(6).toString('hex');
+    // Gera UUID v4 completo, sem limite de 12 dígitos
+    const code = uuidv4();  // ex: "3f9d13e4-2c5f-4a7b-9b8a-1d2e3f4a5b6c"
 
     // Insere no banco
     db.prepare('INSERT INTO backups (code, userId) VALUES (?, ?)').run(code, userId);
@@ -317,46 +417,78 @@ async function payBillLogic(executorId, billId) {
     throw new Error('Missing parameters for payBill');
   }
 
-  // 1) fetch the bill
+  // 1) busca a fatura
   const bill = getBill(billId);
   if (!bill) {
     throw new Error('Bill not found');
   }
 
-  // 2) extract & validate, then TRUNCATE to 8 decimal places
+  // 2) extrai e valida valor truncado
   let amount = parseFloat(bill.amount);
   amount = Math.floor(amount * 1e8) / 1e8;
   if (isNaN(amount) || amount <= 0) {
     throw new Error('Invalid bill amount');
   }
 
-  // 3) ensure payer exists and has funds
+  // 3) caso de self-billing: apenas delete, registre transação e envie DM, sem alterar saldo
+  if (bill.from_id === bill.to_id) {
+    const nowIso = new Date().toISOString();
+    // registra transação usando mesmo UUID da bill
+    db.prepare(`
+      INSERT INTO transactions (id, date, from_id, to_id, amount)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(billId, nowIso, executorId, bill.to_id, amount.toFixed(8));
+
+    // enqueue DM de confirmação
+    const embedSelf = {
+      type: 'rich',
+      title: '🏦 Self-Bill Deleted 🏦',
+      description: [
+        `**${amount.toFixed(8)}** coins`,
+        `Bill ID: \`${billId}\``,
+        '*No funds moved - self-billing*'
+      ].join('\n')
+    };
+    enqueueDM(bill.to_id, embedSelf, { components: [] });
+
+    // remove a bill
+    deleteBill(billId);
+
+    return {
+      billId,
+      toId: bill.to_id,
+      amount: amount.toFixed(8),
+      date: nowIso,
+      message: 'Bill deleted (self-billing)'
+    };
+  }
+
+  // 4) garante que o pagador exista e tenha fundos
   const payer = getUser(executorId);
   if (!payer || payer.coins < amount) {
     throw new Error(`Insufficient funds: need ${amount.toFixed(8)}`);
   }
 
-  // 4) ensure receiver exists (creates them if missing)
+  // 5) garante que o recebedor exista (sem criar automaticamente)
   const receiver = getUser(bill.to_id);
   if (!receiver) {
     throw new Error('Receiver not found');
   }
 
-  // 5) update balances, truncating each result to 8 decimals
+  // 6) atualiza saldos truncados
   const newPayerBalance    = Math.floor((payer.coins - amount) * 1e8) / 1e8;
   const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
-
   setCoins(executorId, newPayerBalance);
   setCoins(bill.to_id, newReceiverBalance);
 
-  // 6) log the transaction using the same UUID as the bill
+  // 7) registra a transação usando o mesmo UUID da bill
   const nowIso = new Date().toISOString();
   db.prepare(`
     INSERT INTO transactions (id, date, from_id, to_id, amount)
     VALUES (?, ?, ?, ?, ?)
   `).run(billId, nowIso, executorId, bill.to_id, amount.toFixed(8));
 
-  // 7) enqueue a DM notification to the receiver
+  // 8) enqueue DM de confirmação ao recebedor
   const embedObj = {
     type: 'rich',
     title: '🏦 Bill Paid 🏦',
@@ -369,21 +501,40 @@ async function payBillLogic(executorId, billId) {
   };
   enqueueDM(bill.to_id, embedObj, { components: [] });
 
-  // 8) remove the paid bill
+  // 9) remove a fatura paga
   deleteBill(billId);
 
   return { billId, toId: bill.to_id, amount: amount.toFixed(8), date: nowIso };
 }
 
+
+module.exports = {
+  // ...
+  payBill: payBillLogic,
+  // ...
+};
+
 // Lógico de listagem de faturas a pagar
 async function getBillsTo(userId, page = 1) {
-  const limit  = 20;
+  const limit  = 10;
   const offset = (page - 1) * limit;
   const rows = db
-    .prepare('SELECT bill_id AS id, from_id, to_id, amount, date FROM bills WHERE to_id = ? ORDER BY date DESC LIMIT ? OFFSET ?')
+    .prepare(`
+      SELECT
+        bill_id   AS id,
+        from_id,
+        to_id,
+        amount,
+        date
+      FROM bills
+      WHERE to_id = ?
+      ORDER BY date DESC
+      LIMIT ? OFFSET ?
+    `)
     .all(userId, limit, offset);
+
   return rows.map(r => ({
-    id:     r.id,
+    id:      r.id,
     from_id: r.from_id,
     to_id:   r.to_id,
     amount:  r.amount,
@@ -392,21 +543,42 @@ async function getBillsTo(userId, page = 1) {
 }
 
 async function getBillsFrom(userId, page = 1) {
-  const limit  = 20;
+  const limit  = 10;
   const offset = (page - 1) * limit;
-  return db.prepare(`
-    SELECT bill_id AS id, from_id, to_id, amount, date
+  
+  const rows = db.prepare(`
+    SELECT
+      bill_id AS id,
+      from_id,
+      to_id,
+      amount,
+      date
     FROM bills
     WHERE from_id = ?
     ORDER BY date DESC
     LIMIT ? OFFSET ?
   `).all(userId, limit, offset);
+
+  return rows.map(r => ({
+    id:      r.id,
+    from_id: r.from_id,
+    to_id:   r.to_id,
+    amount:  r.amount,
+    date:    r.date
+  }));
+}
+
+async function logoutUser(userId, sessionId) {
+  // basta deletar a sessão
+  deleteSession(sessionId);
+  return true;
 }
 
 module.exports = {
   authenticate,
-  login,
-  getBillsTo,
+  login, registerUser,
+  unregisterUser,
+  getBillsTo, logoutUser,
   getBillsFrom,
   getUserIdByUsername,
   getSaldo,
@@ -417,8 +589,10 @@ module.exports = {
   resetUserCard,
   createBackup,
   listBackups,
+  updateUserInfo,
   restoreBackup,
   updateUser: updateUserInfo,
+  getCooldown,
   createBill: createBillLogic,
   payBill:    payBillLogic,
 };

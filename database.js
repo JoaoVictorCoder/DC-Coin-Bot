@@ -222,16 +222,36 @@ function createTransaction(fromId, toId, amount) {
   `).run(txId, date, fromId, toId, amount);
   return { txId, date };
 }
+
+// 2) recupera uma transação existente pelo ID
 function getTransaction(txId) {
-  return db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId);
+  return db
+    .prepare('SELECT id, date, from_id, to_id, amount FROM transactions WHERE id = ?')
+    .get(txId);
 }
+
+// 3) helper que gera um ID único (não conflita) e registra
 function genUniqueTxId() {
   let id;
   do {
     id = uuidv4();
-  } while (db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id));
+  } while (
+    db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id)
+  );
   return id;
 }
+
+// 4) helper que gera e já insere via createTransaction
+function genAndCreateTransaction(fromId, toId, amount) {
+  const txId = genUniqueTxId();
+  const date = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO transactions (id, date, from_id, to_id, amount)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(txId, date, fromId, toId, amount);
+  return { txId, date };
+}
+
 
 // — DM QUEUE —
 function enqueueDM(userId, embedObj, rowObj) {
@@ -253,12 +273,6 @@ function getNextDM() {
 }
 function deleteDM(id) {
   db.prepare('DELETE FROM dm_queue WHERE id = ?').run(id);
-}
-
-function getUser(userId) {
-  const stmt = db.prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
-  const user = stmt.get(userId);
-  return user || null;
 }
 
 function getUserByUsername(username) {
@@ -387,6 +401,14 @@ function listBillsByUser(userId, role = 'from') {
 }
 
 
+/**
+ * Alias para uso direto em logic.js:
+ * expõe a mesma implementação de getCooldown como dbGetCooldown
+ */
+function dbGetCooldown(id) {
+  return getCooldown(id);
+}
+
 
 module.exports = {
   createSession, getSession,
@@ -404,9 +426,9 @@ module.exports = {
   createCard, resetCard, getCardOwner, deleteCard,
   getCardOwnerByHash, deleteSession, listBackups,
   // transactions
-  createTransaction, getTransaction, genUniqueTxId,
+  createTransaction, getTransaction, genUniqueTxId, createTransaction, genAndCreateTransaction,
   // dm queue
-  enqueueDM, getNextDM, deleteDM,
+  enqueueDM, getNextDM, deleteDM, dbGetCooldown,
   // bill
   genUniqueBillId, createBill, getBill, deleteBill, listBillsByUser
 };

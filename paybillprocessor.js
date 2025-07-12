@@ -121,6 +121,7 @@ module.exports = function setupPaybillProcessor(client) {
         ].join('\n'),
         type: 'rich'
       }, { components: [] });
+      processDMQueue();
     } catch (err) {
       console.warn('⚠️ Error enqueueing recipient DM:', err);
     }
