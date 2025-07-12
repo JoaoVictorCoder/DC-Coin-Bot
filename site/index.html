@@ -1,73 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Coin Bank</title>
-  <link rel="icon" href="favicon.ico">
+  <link rel="icon" href="favicon.ico" />
   <style>
-    body { margin:0; font-family: sans-serif; background:#36393f; color:#dcddde; display:flex; justify-content:center; align-items:center; height:100vh; }
-    .modal, .screen { display:none; position:absolute; top:0; left:0; width:100%; height:100%; }
-    .modal.active, .screen.active {
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      flex-direction: column; /* stack children vertically */
+    /* Corpo agora permite scroll completo e mantém conteúdo centralizado horizontalmente */
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #36393f;
+      color: #dcddde;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px 0;
+      min-height: 100vh;
+      overflow-y: auto;
     }
-    .container { display:flex; flex-direction:column; gap:16px; width:420px; }
-    /* make modal cards same width as main container */
-    .modal .card { width:420px; }
-    .card { background:#2f3136; border-radius:8px; padding:20px; position:relative; }
-    .btn { background:#7289da; border:none; border-radius:4px; color:#fff; padding:8px 12px; cursor:pointer; transition: background 0.2s; }
-    .btn.disabled { background:#72767d; cursor:default; }
-    .btn.enabled { background:#43b581; }
-    .btn-reset { background:#ff5c5c; margin-top:12px; }
-    .nav { display:flex; gap:8px; margin-top:16px; }
-    .nav .btn { flex:1; }
-    /* dynamic card now matches padding of container cards */
-    #dynamic { background:#2f3136; border-radius:8px; padding:20px; height:350px; overflow-y:auto; margin-top:8px; }
-    /* Footer card width adjustments */
-    .modal #footerCard { width:420px; }
-    #mainScreen .container > #footerCard { width:auto; } 
-    #footerCard { background:#2f3136; border-radius:8px; padding:20px; text-align:center; margin-top:16px; }
-    .field { margin-bottom:12px; }
-    /* ensure inputs have equal space on left/right inside card */
-    .field input { width:100%; padding:8px; border-radius:4px; border:none; box-sizing:border-box; }
-    .tx, .bill { background:#202225; border-radius:4px; padding:12px; margin-bottom:12px; white-space: pre-line; }
-    .highlight { color:#8f8f8f; }
-    #cardDisplay { display:flex; justify-content:center; }
-    .bank-card { background:#1e1e1e; border-radius:12px; width:300px; height:180px; position:relative; color:#fff; }
-    .bank-card .magstripe { position:absolute; top:20px; left:0; width:100%; height:32px; background:#000; }
-    .bank-card .info { position:absolute; bottom:20px; left:20px; font-size:14px; line-height:1.2; }
-    .balance-box { background: #23272a; padding: 8px; border-radius: 4px; text-align: right; margin: 12px 0; font-size: 20px; }
 
-    /* user & settings buttons */
+    /* Modais de login/register CENTRALIZADOS em full height */
+    #loginModal,
+    #registerModal {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #loginModal.active,
+    #registerModal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+
+    /* Tela principal CENTRALIZADA em viewport mas scrollável no body */
+    #mainScreen {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+    }
+    #mainScreen.active {
+      display: flex;
+      align-items: center; /* centraliza vertical */
+      justify-content: center;
+      flex-direction: column;
+      padding: 100px 0; /* espaço acima/abaixo */
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 420px;
+    }
+
+    /* make modal cards same width as main container */
+    .modal .card {
+      width: 420px;
+    }
+    .container > .card {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .card {
+      background: #2f3136;
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+    }
+
+    .btn {
+      background: #7289da;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn.disabled {
+      background: #72767d;
+      cursor: default;
+    }
+    .btn.enabled {
+      background: #43b581;
+    }
+    .btn-reset {
+      background: #ff5c5c;
+      margin-top: 12px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .nav .btn {
+      flex: 1;
+    }
+
+    #dynamic {
+      background: #2f3136;
+      border-radius: 8px;
+      padding: 20px;
+      height: 500px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+
+    /* Footer card igual largura dos modais e centralizado */
+    .modal #footerCard {
+      width: 460px;
+      margin: 16px auto 0 auto;
+    }
+    #footerCard {
+      background: #2f3136;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      box-sizing: border-box;
+      width: 100%; /* importantíssimo para ajustar ao container */
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+    .field input {
+      width: 100%;
+      padding: 8px;
+      border-radius: 4px;
+      border: none;
+      box-sizing: border-box;
+    }
+
+    .tx,
+    .bill {
+      background: #202225;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      white-space: pre-line;
+    }
+
+    .highlight {
+      color: #8f8f8f;
+    }
+
+    #cardDisplay {
+      display: flex;
+      justify-content: center;
+    }
+    .bank-card {
+      background: #1e1e1e;
+      border-radius: 12px;
+      width: 300px;
+      height: 180px;
+      position: relative;
+      color: #fff;
+    }
+    .bank-card .magstripe {
+      position: absolute;
+      top: 20px;
+      left: 0;
+      width: 100%;
+      height: 32px;
+      background: #000;
+    }
+    .bank-card .info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .balance-box {
+      background: #23272a;
+      padding: 8px;
+      border-radius: 4px;
+      text-align: right;
+      margin: 12px 0;
+      font-size: 20px;
+    }
+
+    #userBtn,
+    #settingsBtn {
+      position: absolute;
+      top: 16px;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      font-size: 18px;
+      line-height: 32px;
+      text-align: center;
+      cursor: pointer;
+    }
     #userBtn {
-      position: absolute; top: 16px; right: 16px;
-      background: #43b581; width: 32px; height: 32px; border-radius: 6px;
-      font-size: 18px; line-height: 32px; text-align: center; cursor: pointer;
+      right: 16px;
+      background: #43b581;
     }
     #settingsBtn {
-      position: absolute; top: 16px; right: 56px;
-      background: #7289da; width: 32px; height: 32px; border-radius: 6px;
-      font-size: 18px; line-height: 32px; text-align: center; cursor: pointer;
+      right: 56px;
+      background: #7289da;
     }
   </style>
 </head>
 <body>
-
   <!-- Login Modal -->
   <div id="loginModal" class="modal active">
     <div class="card">
       <h2>Login</h2>
-      <div class="field"><input id="loginUser" placeholder="Username"></div>
-      <div class="field"><input id="loginPass" type="password" placeholder="Password"></div>
+      <div class="field"><input id="loginUser" placeholder="Username" /></div>
+      <div class="field">
+        <input id="loginPass" type="password" placeholder="Password" />
+      </div>
       <button id="loginBtn" class="btn">Log In</button>
       <button id="goRegisterBtn" class="btn">Register</button>
     </div>
     <div id="footerCard" class="card">
       <div>Discord Coin System © since 2025</div>
-      <div><a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" style="color:#7289da; text-decoration:none;">Install</a></div>
+      <div>
+        <a
+          href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
+          style="color: #7289da; text-decoration: none"
+          >Install</a
+        >
+      </div>
     </div>
   </div>
 
@@ -75,15 +241,25 @@
   <div id="registerModal" class="modal">
     <div class="card">
       <h2>Register</h2>
-      <div class="field"><input id="regUser" placeholder="Username"></div>
-      <div class="field"><input id="regPass" type="password" placeholder="Password"></div>
-      <div class="field"><input id="regConfirm" type="password" placeholder="Confirm Password"></div>
+      <div class="field"><input id="regUser" placeholder="Username" /></div>
+      <div class="field">
+        <input id="regPass" type="password" placeholder="Password" />
+      </div>
+      <div class="field">
+        <input id="regConfirm" type="password" placeholder="Confirm Password" />
+      </div>
       <button id="registerBtn" class="btn">Register</button>
       <button id="backBtn" class="btn">Back</button>
     </div>
     <div id="footerCard" class="card">
       <div>Discord Coin System © since 2025</div>
-      <div><a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" style="color:#7289da; text-decoration:none;">Install</a></div>
+      <div>
+        <a
+          href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
+          style="color: #7289da; text-decoration: none"
+          >Install</a
+        >
+      </div>
     </div>
   </div>
 
@@ -91,15 +267,13 @@
   <div id="mainScreen" class="screen">
     <div class="container">
       <div class="card">
-        <strong id="dispUser" style="font-size:18px;"></strong>
+        <strong id="dispUser" style="font-size: 18px"></strong>
         <div class="field"><span id="dispUserId"></span></div>
         <div class="balance-box">
           <span id="dispBalance" class="highlight">0.00000000</span> coins
         </div>
-
         <div id="settingsBtn">⚙️</div>
         <div id="userBtn">👤</div>
-
         <div class="nav">
           <button class="btn" data-screen="history">Home</button>
           <button class="btn" data-screen="card">Card</button>
@@ -108,322 +282,346 @@
           <button class="btn" data-screen="claim">Claim</button>
         </div>
       </div>
-
       <div id="dynamic" class="card"></div>
-
       <div id="footerCard" class="card">
         <div>Discord Coin System © since 2025</div>
-        <div><a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" style="color:#7289da; text-decoration:none;">Install</a></div>
+        <div>
+          <a
+            href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
+            style="color: #7289da; text-decoration: none"
+            >Install</a
+          >
+        </div>
       </div>
     </div>
   </div>
 
   <script>
-  (function(){
-    const API = location.origin;
-    let session = null, remaining = 0, lastTimestamp = null;
-
-    function authHeaders(){
-      return { 'Authorization':'Bearer '+session.sessionId, 'Content-Type':'application/json' };
-    }
-    function show(screen){
-      document.getElementById('loginModal').classList.toggle('active', screen==='login');
-      document.getElementById('registerModal').classList.toggle('active', screen==='register');
-      document.getElementById('mainScreen').classList.toggle('active', screen==='main');
-    }
-
-    // 👤 LOGIN
-    async function login(){
-      const u = document.getElementById('loginUser').value.trim();
-      const p = document.getElementById('loginPass').value;
-      try {
-        const r = await fetch(API+'/api/login',{
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ username: u, password: p })
-        });
-        if(!r.ok) throw '';
-        const j = await r.json();
-        if(j.sessionCreated && j.passwordCorrect){
-          session = { username: u, sessionId: j.sessionId, userId: j.userId };
-          localStorage.setItem('session', JSON.stringify(session));
-          init();
-        } else alert('Invalid credentials');
-      } catch {
-        alert('Login error');
+    (function () {
+      const API = location.origin;
+      let session = null,
+        remaining = 0,
+        lastTimestamp = null;
+      function authHeaders() {
+        return { Authorization: "Bearer " + session.sessionId, "Content-Type": "application/json" };
       }
-    }
-
-    // 🆕 REGISTER
-    async function doRegister(){
-      const u  = document.getElementById('regUser').value.trim();
-      const p  = document.getElementById('regPass').value;
-      const cp = document.getElementById('regConfirm').value;
-      if(!u||!p||!cp) return alert('Please fill all fields.');
-      if(p!==cp) return alert('Please insert the same password.');
-      try {
-        const r = await fetch(API+'/api/register',{
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ username: u, password: p })
-        });
-        const j = await r.json();
-        if(!r.ok) throw new Error(j.error||'Register failed');
-        alert('Account created! Please login.');
-        show('login');
-      } catch(e){
-        alert(e.message);
+      function show(screen) {
+        document.getElementById("loginModal").classList.toggle("active", screen === "login");
+        document.getElementById("registerModal").classList.toggle("active", screen === "register");
+        document.getElementById("mainScreen").classList.toggle("active", screen === "main");
       }
-    }
-
-    // 💰 BALANCE
-    async function loadBalance(){
-      try {
-        const r = await fetch(`${API}/api/user/${session.userId}/balance`,{ headers: authHeaders() });
-        if(r.ok){
-          const { coins=0 } = await r.json();
-          document.getElementById('dispBalance').textContent = coins.toFixed(8);
-        }
-      } catch{}
-    }
-
-    // 🔄 MODULE LOADER
-    async function loadModule(mod){
-      const c=document.getElementById('dynamic');
-      c.innerHTML='';
-      if(mod==='settings'){
-        c.innerHTML=
-          `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">`+
-            `<button class="btn-reset" onclick="doUnregister()">Unregister</button>`+
-            `<button class="btn-reset" onclick="doLogout()">Logout</button>`+
-          `</div>`+
-          `<div class="field"><input id="newUser" placeholder="Username (optional)"></div>`+
-          `<div class="field"><input id="newPass" type="password" placeholder="New Password"></div>`+
-          `<div class="field"><input id="confirmPass" type="password" placeholder="Confirm Password"></div>`+
-          `<button class="btn-reset" style="background:#ff5c5c;width:100%;" onclick="doChange()">Change</button>`;
-        return;
-      }
-      if(mod==='backup'){
-        c.innerHTML=
-          `<div class="field"><input id="backupId" placeholder="Your backup ID"></div>`+
-          `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">`+
-            `<button class="btn" onclick="doRestore()">Restore</button>`+
-            `<button class="btn" onclick="doCreateBackup()">Create Backup</button>`+
-          `</div>`+
-          `<hr style="margin:16px 0;border-color:#444"><h3>Your Backups</h3>`;
-        try{
-          const res=await fetch(API+'/api/backup/list',{method:'POST',headers:authHeaders()});
-          if(res.ok){
-            const { backups }=await res.json();
-            backups.forEach(code=>{
-              const d=document.createElement('div');
-              d.className='bill';
-              d.innerHTML=`${code}<br><button onclick="navigator.clipboard.writeText('${code}')">copy</button>`;
-              c.append(d);
-            });
+      async function login() {
+        const u = document.getElementById("loginUser").value.trim();
+        const p = document.getElementById("loginPass").value;
+        try {
+          const r = await fetch(API + "/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: u, password: p }),
+          });
+          if (!r.ok) throw "";
+          const j = await r.json();
+          if (j.sessionCreated && j.passwordCorrect) {
+            session = { username: u, sessionId: j.sessionId, userId: j.userId };
+            localStorage.setItem("session", JSON.stringify(session));
+            init();
+          } else {
+            alert("Invalid credentials");
           }
-        }catch{}
-        return;
+        } catch {
+          alert("Login error");
+        }
       }
-      if(mod==='transfer'){
-        c.innerHTML=
-          `<div class="field"><input id="amt" placeholder="Amount"></div>`+
-          `<div class="field"><input id="toId" placeholder="Recipient ID"></div>`+
-          `<button class="btn" onclick="doTransfer()">Pay User</button><hr style="margin:16px 0;border-color:#444">`+
-          `<div class="field"><input id="billId" placeholder="Bill ID"></div>`+
-          `<button class="btn" onclick="doPayBill()">Pay Bill</button>`;
-        return;
+      async function doRegister() {
+        const u = document.getElementById("regUser").value.trim();
+        const p = document.getElementById("regPass").value;
+        const cp = document.getElementById("regConfirm").value;
+        if (!u || !p || !cp) return alert("Please fill all fields.");
+        if (p !== cp) return alert("Passwords must match.");
+        try {
+          const r = await fetch(API + "/api/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: u, password: p }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || "Register failed");
+          alert("Account created! Please login.");
+          show("login");
+        } catch (e) {
+          alert(e.message);
+        }
       }
-      if(mod==='history'){
-        const r=await fetch(API+'/api/transactions?page=1',{headers:authHeaders()});
-        if(!r.ok) return;
-        const { transactions }=await r.json();
-        transactions.forEach(t=>{
-          const d=document.createElement('div'); d.className='tx';
-          d.textContent=
-            `data: ${new Date(t.date).toLocaleString('pt-BR')}\n\n`+
-            `from: ${t.from_id}\n\n`+
-            `to: ${t.to_id}\n`+
-            `amount: ${parseFloat(t.amount).toFixed(8)} coins\n\n`+
-            `${t.id}`;
-          c.append(d);
-        });
-      }
-      if(mod==='bills'){
-        const r=await fetch(API+'/api/bill/list',{method:'POST',headers:authHeaders(),body:JSON.stringify({page:1})});
-        if(!r.ok) return;
-        const { toPay,toReceive }=await r.json();
-        [...toPay,...toReceive].forEach(b=>{
-          const div=document.createElement('div'); div.className='bill';
-          div.innerHTML=
-            `data: ${new Date(b.date).toLocaleString('pt-BR')}<br>`+
-            `from: ${b.from_id}<br>`+
-            `to: ${b.to_id}<br>`+
-            `amount: ${parseFloat(b.amount).toFixed(8)} coins<br><br>`+
-            `${b.id} <button onclick="navigator.clipboard.writeText('${b.id}')">copy</button>`;
-          c.append(div);
-        });
-      }
-      if(mod==='card'){
-        const r=await fetch(API+'/api/card',{method:'POST',headers:authHeaders()});
-        if(!r.ok) return;
-        const { cardCode }=await r.json();
-        c.innerHTML=
-          `<div id="cardDisplay"><div class="bank-card"><div class="magstripe"></div>`+
-          `<div class="info"><p>${session.userId}</p><p>${cardCode}</p></div></div></div>`+
-          `<button class="btn-reset" onclick="resetCard()">Reset</button><hr style="margin:16px 0;border-color:#444">`+
-          `<div class="field"><input id="billAmount" placeholder="Amount"></div>`+
-          `<div class="field"><input id="billFrom" placeholder="From (User ID)"></div>`+
-          `<button class="btn" onclick="doCreateBill()">Create Bill</button>`;
-        return;
-      }
-      if(mod==='claim'){
-        c.innerHTML=
-          `<div style="display:flex;flex-direction:column;align-items:center;">`+
-            `<h3 style="margin-bottom:16px;">Claim Coins</h3>`+
-            `<button id="claimActionBtn" class="btn disabled" disabled>Claim</button>`+
-            `<div style="height:1em;"></div>`+
-            `<div id="claimTimer">00h 00m 00s</div>`+
-            `<div id="lastClaimDate" style="margin-top:16px;font-size:12px;color:#aaa;">Last claim: —</div>`+
-          `</div>`;
-        setupClaim(c);
-      }
-    }
-
-    function setupClaim(container){
-      fetch(API+'/api/claim/status',{headers:authHeaders()})
-        .then(r=>r.json()).then(j=>{
-          remaining = j.cooldownRemainingMs;
-          lastTimestamp = j.lastClaimTimestamp;
-          const dateEl = container.querySelector('#lastClaimDate');
-          if(lastTimestamp) {
-            dateEl.textContent = 'Last claim: ' + new Date(lastTimestamp).toLocaleString('pt-BR');
+      async function loadBalance() {
+        try {
+          const r = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
+          if (r.ok) {
+            const { coins = 0 } = await r.json();
+            document.getElementById("dispBalance").textContent = coins.toFixed(8);
           }
-          updateTimer();
-        });
-      function updateTimer(){
-        const btn = container.querySelector('#claimActionBtn'),
-              timer = container.querySelector('#claimTimer');
-        if(remaining <= 0){
-          btn.disabled = false;
-          btn.classList.remove('disabled');
-          btn.classList.add('enabled');
-          btn.onclick = doClaim;
-          timer.textContent = '00h 00m 00s';
-        } else {
-          btn.disabled = true;
-          btn.classList.remove('enabled');
-          btn.classList.add('disabled');
-          const h = Math.floor(remaining/3600000),
-                m = Math.floor((remaining%3600000)/60000),
-                s = Math.floor((remaining%60000)/1000);
-          timer.textContent = `${h}h ${m}m ${s}s`;
-          remaining -= 1000;
-          setTimeout(updateTimer,1000);
+        } catch {}
+      }
+      async function loadModule(mod) {
+        const c = document.getElementById("dynamic");
+        c.innerHTML = "";
+        if (mod === "settings") {
+          c.innerHTML =
+            `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">` +
+            `<button class="btn-reset" onclick="doUnregister()">Unregister</button>` +
+            `<button class="btn-reset" onclick="doLogout()">Logout</button>` +
+            `</div>` +
+            `<div class="field"><input id="newUser" placeholder="Username (optional)"></div>` +
+            `<div class="field"><input id="newPass" type="password" placeholder="New Password"></div>` +
+            `<div class="field"><input id="confirmPass" type="password" placeholder="Confirm Password"></div>` +
+            `<button class="btn-reset" style="background:#ff5c5c;width:100%;" onclick="doChange()">Change</button>`;
+          return;
+        }
+        if (mod === "backup") {
+          c.innerHTML =
+            `<div class="field"><input id="backupId" placeholder="Your backup ID"></div>` +
+            `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">` +
+            `<button class="btn" onclick="doRestore()">Restore</button>` +
+            `<button class="btn" onclick="doCreateBackup()">Create Backup</button>` +
+            `</div>` +
+            `<hr style="margin:16px 0;border-color:#444"><h3>Your Backups</h3>`;
+          try {
+            const res = await fetch(API + "/api/backup/list", { method: "POST", headers: authHeaders() });
+            if (res.ok) {
+              const { backups } = await res.json();
+              backups.forEach((code) => {
+                const d = document.createElement("div");
+                d.className = "bill";
+                d.innerHTML = `${code}<br><button onclick="navigator.clipboard.writeText('${code}')">copy</button>`;
+                c.append(d);
+              });
+            }
+          } catch {}
+          return;
+        }
+        if (mod === "transfer") {
+          c.innerHTML =
+            `<div class="field"><input id="amt" placeholder="Amount"></div>` +
+            `<div class="field"><input id="toId" placeholder="Recipient ID"></div>` +
+            `<button class="btn" onclick="doTransfer()">Pay User</button><hr style="margin:16px 0;border-color:#444">` +
+            `<div class="field"><input id="billId" placeholder="Bill ID"></div>` +
+            `<button class="btn" onclick="doPayBill()">Pay Bill</button>`;
+          return;
+        }
+        if (mod === "history") {
+          const r = await fetch(API + "/api/transactions?page=1", { headers: authHeaders() });
+          if (!r.ok) return;
+          const { transactions } = await r.json();
+          transactions.forEach((t) => {
+            const d = document.createElement("div");
+            d.className = "tx";
+            d.textContent =
+              `data: ${new Date(t.date).toLocaleString("pt-BR")}\n\n` +
+              `from: ${t.from_id}\n\n` +
+              `to: ${t.to_id}\n` +
+              `amount: ${parseFloat(t.amount).toFixed(8)} coins\n\n` +
+              `${t.id}`;
+            c.append(d);
+          });
+        }
+        if (mod === "bills") {
+          const r = await fetch(API + "/api/bill/list", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ page: 1 }),
+          });
+          if (!r.ok) return;
+          const { toPay, toReceive } = await r.json();
+          [...toPay, ...toReceive].forEach((b) => {
+            const div = document.createElement("div");
+            div.className = "bill";
+            div.innerHTML =
+              `data: ${new Date(b.date).toLocaleString("pt-BR")}<br>` +
+              `from: ${b.from_id}<br>` +
+              `to: ${b.to_id}<br>` +
+              `amount: ${parseFloat(b.amount).toFixed(8)} coins<br><br>` +
+              `${b.id} <button onclick="navigator.clipboard.writeText('${b.id}')">copy</button>`;
+            c.append(div);
+          });
+        }
+        if (mod === "card") {
+          const r = await fetch(API + "/api/card", { method: "POST", headers: authHeaders() });
+          if (!r.ok) return;
+          const { cardCode } = await r.json();
+          c.innerHTML =
+            `<div id="cardDisplay"><div class="bank-card"><div class="magstripe"></div>` +
+            `<div class="info"><p>${session.userId}</p><p>${cardCode}</p></div></div></div>` +
+            `<button class="btn-reset" onclick="resetCard()">Reset</button><hr style="margin:16px 0;border-color:#444">` +
+            `<div class="field"><input id="billAmount" placeholder="Amount"></div>` +
+            `<div class="field"><input id="billFrom" placeholder="From (User ID)"></div>` +
+            `<button class="btn" onclick="doCreateBill()">Create Bill</button>`;
+          return;
+        }
+        if (mod === "claim") {
+          c.innerHTML =
+            `<div style="display:flex;flex-direction:column;align-items:center;">` +
+            `<h3 style="margin-bottom:16px;">Claim Coins</h3>` +
+            `<button id="claimActionBtn" class="btn disabled" disabled>Claim</button>` +
+            `<div style="height:1em;"></div>` +
+            `<div id="claimTimer">00h 00m 00s</div>` +
+            `<div id="lastClaimDate" style="margin-top:16px;font-size:12px;color:#aaa;">Last claim: —</div>` +
+            `</div>`;
+          setupClaim(c);
         }
       }
-    }
-
-    // ACTIONS
-    window.doTransfer=async function(){
-      const amt=parseFloat(document.getElementById('amt').value),
-            toId=document.getElementById('toId').value.trim();
-      await fetch(API+'/api/transfer',{method:'POST',headers:authHeaders(),body:JSON.stringify({toId,amount:amt})});
-      loadBalance();
-    };
-    window.doPayBill=async function(){
-      const billId=document.getElementById('billId').value.trim();
-      await fetch(API+'/api/bill/pay',{method:'POST',headers:authHeaders(),body:JSON.stringify({billId})});
-      loadModule('bills');
-    };
-    window.doCreateBill=async function(){
-      const amount=parseFloat(document.getElementById('billAmount').value),
-            fromId=document.getElementById('billFrom').value.trim();
-      if(!amount||!fromId) return alert('Preencha Amount e From');
-      const res=await fetch(API+'/api/bill/create',{method:'POST',headers:authHeaders(),body:JSON.stringify({fromId,toId:session.userId,amount})});
-      if(res.ok) loadModule('bills'); else{const j=await res.json();alert(`Erro: ${j.error||'unknown'}`);}
-    };
-    window.resetCard=async function(){
-      await fetch(API+'/api/card/reset',{method:'POST',headers:authHeaders()});
-      loadModule('card');
-    };
-    window.doRestore=async function(){
-      const bid=document.getElementById('backupId').value.trim();
-      if(!bid) return alert('Informe o ID do backup');
-      await fetch(API+'/api/backup/restore',{method:'POST',headers:authHeaders(),body:JSON.stringify({backupId:bid})});
-      loadModule('backup'); loadBalance();
-    };
-    window.doCreateBackup=async function(){
-      await fetch(API+'/api/backup/create',{method:'POST',headers:authHeaders()});
-      loadModule('backup');
-    };
-    window.doUnregister=async function(){
-      await fetch(API+'/api/account/unregister',{method:'POST',headers:authHeaders()});
-      show('login');
-    };
-    window.doLogout=async function(){
-      await fetch(API+'/api/logout',{method:'POST',headers:authHeaders()});
-      localStorage.removeItem('session');
-      show('login');
-    };
-    window.doChange=async function(){
-      const nu=document.getElementById('newUser').value.trim(),
-            np=document.getElementById('newPass').value,
-            cp=document.getElementById('confirmPass').value;
-      if(!np||np!==cp) return alert('Passwords must match');
-      await fetch(API+'/api/account/change',{method:'POST',headers:authHeaders(),body:JSON.stringify({username:nu||undefined,password:np})});
-      alert('Credentials updated, please log in again');
-      doLogout();
-    };
-
-    // ── CLAIM ──
-    window.doClaim = async function() {
-      try {
-        const res = await fetch(API + '/api/claim', {
-          method: 'POST',
-          headers: authHeaders()
-        });
-        const j = await res.json();
-        if (res.ok) {
-          alert(`🎉 You claimed ${j.claimed} coins!`);
-          loadBalance();
-          loadModule('claim');
-        } else if (res.status === 429) {
-          alert(`⏳ Cooldown ativo. Próximo claim em ${j.nextClaimInMs} ms`);
-        } else {
-          alert(`❌ Erro ao claim: ${j.error || 'unknown'}`);
+      function setupClaim(container) {
+        fetch(API + "/api/claim/status", { headers: authHeaders() })
+          .then((r) => r.json())
+          .then((j) => {
+            remaining = j.cooldownRemainingMs;
+            lastTimestamp = j.lastClaimTimestamp;
+            const dateEl = container.querySelector("#lastClaimDate");
+            if (lastTimestamp) {
+              dateEl.textContent = "Last claim: " + new Date(lastTimestamp).toLocaleString("pt-BR");
+            }
+            updateTimer();
+          });
+        function updateTimer() {
+          const btn = container.querySelector("#claimActionBtn"),
+            timer = container.querySelector("#claimTimer");
+          if (remaining <= 0) {
+            btn.disabled = false;
+            btn.classList.remove("disabled");
+            btn.classList.add("enabled");
+            btn.onclick = doClaim;
+            timer.textContent = "00h 00m 00s";
+          } else {
+            btn.disabled = true;
+            btn.classList.remove("enabled");
+            btn.classList.add("disabled");
+            const h = Math.floor(remaining / 3600000),
+              m = Math.floor((remaining % 3600000) / 60000),
+              s = Math.floor((remaining % 60000) / 1000);
+            timer.textContent = `${h}h ${m}m ${s}s`;
+            remaining -= 1000;
+            setTimeout(updateTimer, 1000);
+          }
         }
-      } catch (err) {
-        console.error('❌ Claim failed:', err);
-        alert('❌ Falha no claim. Tente novamente mais tarde.');
       }
-    };
 
-    // LISTENERS
-    document.getElementById('loginBtn').onclick      = login;
-    document.getElementById('goRegisterBtn').onclick = ()=>show('register');
-    document.getElementById('registerBtn').onclick   = doRegister;
-    document.getElementById('backBtn').onclick       = ()=>show('login');    
-    document.querySelectorAll('.nav .btn').forEach(b=>b.onclick=()=>loadModule(b.dataset.screen));
-    document.getElementById('settingsBtn').onclick   = ()=>loadModule('settings');
-    document.getElementById('userBtn').onclick       = ()=>loadModule('backup');
+      // AÇÕES
+      window.doTransfer = async function () {
+        const amt = parseFloat(document.getElementById("amt").value),
+          toId = document.getElementById("toId").value.trim();
+        await fetch(API + "/api/transfer", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ toId, amount: amt }),
+        });
+        loadBalance();
+      };
+      window.doPayBill = async function () {
+        const billId = document.getElementById("billId").value.trim();
+        await fetch(API + "/api/bill/pay", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ billId }),
+        });
+        loadModule("bills");
+      };
+      window.doCreateBill = async function () {
+        const amount = parseFloat(document.getElementById("billAmount").value),
+          fromId = document.getElementById("billFrom").value.trim();
+        if (!amount || !fromId) return alert("Preencha Amount e From");
+        const res = await fetch(API + "/api/bill/create", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ fromId, toId: session.userId, amount }),
+        });
+        if (res.ok) loadModule("bills");
+        else {
+          const j = await res.json();
+          alert(`Erro: ${j.error || "unknown"}`);
+        }
+      };
+      window.resetCard = async function () {
+        await fetch(API + "/api/card/reset", { method: "POST", headers: authHeaders() });
+        loadModule("card");
+      };
+      window.doRestore = async function () {
+        const bid = document.getElementById("backupId").value.trim();
+        if (!bid) return alert("Informe o ID do backup");
+        await fetch(API + "/api/backup/restore", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ backupId: bid }),
+        });
+        loadModule("backup");
+        loadBalance();
+      };
+      window.doCreateBackup = async function () {
+        await fetch(API + "/api/backup/create", { method: "POST", headers: authHeaders() });
+        loadModule("backup");
+      };
+      window.doUnregister = async function () {
+        await fetch(API + "/api/account/unregister", { method: "POST", headers: authHeaders() });
+        show("login");
+      };
+      window.doLogout = async function () {
+        await fetch(API + "/api/logout", { method: "POST", headers: authHeaders() });
+        localStorage.removeItem("session");
+        show("login");
+      };
+      window.doChange = async function () {
+        const nu = document.getElementById("newUser").value.trim(),
+          np = document.getElementById("newPass").value,
+          cp = document.getElementById("confirmPass").value;
+        if (!np || np !== cp) return alert("Passwords must match");
+        await fetch(API + "/api/account/change", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ username: nu || undefined, password: np }),
+        });
+        alert("Credentials updated, please log in again");
+        doLogout();
+      };
 
-    // INIT
-    function init(){
-      const s=localStorage.getItem('session');
-      if(!s) return show('login');
-      session=JSON.parse(s);
-      if(!session.sessionId) return show('login');
-      document.getElementById('dispUser').textContent   = session.username;
-      document.getElementById('dispUserId').textContent = session.userId;
-      show('main');
-      loadBalance();
-      setInterval(loadBalance,2000);
-      loadModule('history');
-    }
-    init();
+      window.doClaim = async function () {
+        try {
+          const res = await fetch(API + "/api/claim", { method: "POST", headers: authHeaders() });
+          const j = await res.json();
+          if (res.ok) {
+            alert(`🎉 You claimed ${j.claimed} coins!`);
+            loadBalance();
+            loadModule("claim");
+          } else if (res.status === 429) {
+            alert(`⏳ Cooldown ativo. Próximo claim em ${j.nextClaimInMs} ms`);
+          } else {
+            alert(`❌ Erro ao claim: ${j.error || "unknown"}`);
+          }
+        } catch (err) {
+          console.error("❌ Claim failed:", err);
+          alert("❌ Falha no claim. Tente novamente mais tarde.");
+        }
+      };
 
-  })();
+      // LISTENERS
+      document.getElementById("loginBtn").onclick = login;
+      document.getElementById("goRegisterBtn").onclick = () => show("register");
+      document.getElementById("registerBtn").onclick = doRegister;
+      document.getElementById("backBtn").onclick = () => show("login");
+      document.querySelectorAll(".nav .btn").forEach((b) => (b.onclick = () => loadModule(b.dataset.screen)));
+      document.getElementById("settingsBtn").onclick = () => loadModule("settings");
+      document.getElementById("userBtn").onclick = () => loadModule("backup");
+
+      function init() {
+        const s = localStorage.getItem("session");
+        if (!s) return show("login");
+        session = JSON.parse(s);
+        if (!session.sessionId) return show("login");
+        document.getElementById("dispUser").textContent = session.username;
+        document.getElementById("dispUserId").textContent = session.userId;
+        show("main");
+        loadBalance();
+        setInterval(loadBalance, 2000);
+        loadModule("history");
+      }
+      init();
+    })();
   </script>
 </body>
 </html>
