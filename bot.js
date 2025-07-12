@@ -177,83 +177,41 @@ client.on('guildCreate', async (guild) => {
     const owner = await guild.fetchOwner();
 
     const mensagem = `
-> (English Message)
+> # **Thanks for contributing with this bot!**
 > 
-> Thanks for contributing with this bot!
-> 
-> Set up your bot on your server to make possible for users to get coin rewards!
-> 
-> Use \`!set channel_id\`
-> 
-> Example: \`!set 1387464728045162656\`
-> 
-> Be sure that the bot has the right permission to view the channel and send messages & embeds.
+> ⚠️ Be sure that the bot has the right permission to view the channel and send messages & embeds.
 > 
 > All the commands is better with /commands (but ! and / works)
 > 
 > 📘 **List of avaliable commands:**
-> - \`!rank\` — view the rank of the most rich people.
-> - \`!pay @user ammount\` — example: \`!pay @user 0.01\` to send money
-> - \`!bal\` — check your current balance
-> - \`!check\` — checks the ID of a transaction
-> - \`!history\` — checks your or others transaction history
-> - \`!card\` — generates a debit card to use in the payment api in other bots
-> - \`!cardreset\` — resets and gives you another card to keep it safe
-> - \`!restore\` — restores your wallet backup
-> - \`!backup\` — creates a wallet backup to restores your coins even if this account got deleted
-> - \`!view @user\` — example: \`!view @user\` to see another user's balance
-> - \`!notify channel_ID\` — example: \`!notify 1324535042843869300\` to create a notifications channel for the bot
+> 
+> - \`!global\` - shows the economy information.
+> - \`!help\` - shows you the help menu.
+> - \`!ajuda\` - shows you the help menu in portuguese.
+> - \`!user\` - changes your account info.
+> - \`!rank\` — shows the rank of the 25 most rich people.
+> - \`!pay @user ammount\` — example: \`!pay @user 0.01\` to send money.
+> - \`!bal\` — checks your current balance.
+> - \`!check\` — checks the ID of a transaction.
+> - \`!history\` — checks your or others transaction history.
+> - \`!card\` — generates a debit card to use in the payment api in other bots.
+> - \`!cardreset\` — resets and gives you another card to keep it safe.
+> - \`!restore\` — restores your wallet backup.
+> - \`!backup\` — creates a wallet backup to restores your coins even if this account got deleted.
+> - \`!view @user\` — example: \`!view @user\` to see another user's balance.
+> - \`!api channel_ID\` — example: \`!api 1324535042843869300\` to create an API channel for the bot.
 > - \`!set channel_ID\` — example: \`!set 1387471903832281219\` to create a atm and rewards channel for your server and improve your server's Engagement!
-> \`Do not forget to config the server and put all those channels! It will improve a lot your server and bot functionalities.\`
 > 
 > 💛 Help this project with bitcoins donation. Any help is welcome:
-\`\`\`
-bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00
-\`\`\`
-> 💬 Oficial Support: https://discord.gg/C5cAfhcdRp
+> \`\`\` bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00 \`\`\`
 > 
-> 🏦 Add the bot in more servers: https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot
+> 🌌 [> COIN BANK WEBSITE <](http://coin.foxsrv.net:1033/site/index.html)
+> 
+> 💬 [> Oficial Support <](https://discord.gg/C5cAfhcdRp)
+> 
+> 🏦 [> Add the bot in more servers <](https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot)
 > 
 > Bot Creators: MinyBaby e FoxOficial.
-> 
-> (Mensagem em Português)
-> 
-> Obrigado por contribuir e usar esse bot!
-> 
-> Configure o bot no seu servidor para que ele possa gerar recompensas para seus usuários!
-> 
-> Use \`!set id_do_canal\`
-> 
-> Exemplo: \`!set 1387464728045162656\`
-> 
-> Certifique-se que o bot tenha permissão de enviar mensagens e emblemas no canal desejado.
-> 
-> Comandos com / são melhores (mas os comandos ! e / funcionam iguais)
-> 
-> 📘 **Lista de comandos disponíveis:**
-> - \`!rank\` — vê o rank global das pessoas mais ricas
-> - \`!pay @usuário valor\` — exemplo: \`!pay @user 0.01\` para transferir dinheiro
-> - \`!bal\` — consulta seu saldo atual
-> - \`!check\` — consulta ID da transferência
-> - \`!history\` — consulta histórico de transações
-> - \`!card\` — cria seu cartão de crédito do bot para usar em api de pagamento de outros bots
-> - \`!cardreset\` — reseta e pega outro cartão para evitar ter seu cartão clonado
-> - \`!restore\` — restaura seu backup
-> - \`!backup\` — faz um backup do seu saldo para resgatar em outra conta mesmo se essa aqui for deletada
-> - \`!view @usuário\` — exemplo: \`!view @user\` para ver quanto dinheiro outro usuário tem
-> - \`!remind ID_do_canal\` — exemplo: \`!remind 1324535042843869300\` para criar o canal de notificação do bot
-> - \`!set ID_do_canal\` — exemplo: \`!set 1387471903832281219\` para criar o canal de recompensas para poder usar o bot e aumentar o engajamento do seu servidor!
-> \`Não esqueça de configurar e colocar todos esses canais mencionados ao seu servidor! Isso vai melhorar e muito o funcionamento do seu servidor e do bot.\`
-> 
-> 💛 Ajude a manter o projeto com Bitcoins. Qualquer ajuda é bem vinda:
-\`\`\`
-bc1qs9fnngn9svkw8vv5npd7fn504tqx40kuh00
-\`\`\`
-> 💬 Suporte Oficial: https://discord.gg/C5cAfhcdRp
-> 
-> 🏦 Adicione o bot em mais servidores: https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot
-> 
-> Criadores do Bot: MinyBaby e FoxOficial.
   `;
 
     // Enfileira a mensagem para o dono do servidor via DM
