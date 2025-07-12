@@ -1,6 +1,6 @@
 // commands/rank.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getAllUsers } = require('../database');
+const { getAllUsers, getUser } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -25,14 +25,23 @@ module.exports = {
       let description = '';
       for (let i = 0; i < top25.length; i++) {
         const entry = top25[i];
-        let tag = 'Unknown';
-        try {
-          const u = await interaction.client.users.fetch(entry.id);
-          tag = u.tag;
-        } catch {
-          // fallback to 'Unknown'
+        // 1) try database username
+        const dbRecord = getUser(entry.id);
+        let displayName;
+        if (dbRecord && dbRecord.username) {
+          displayName = dbRecord.username;
+        } else {
+          // 2) fallback to Discord tag
+          try {
+            const u = await interaction.client.users.fetch(entry.id);
+            displayName = u.tag;
+          } catch {
+            // 3) ultimate fallback: raw ID
+            displayName = entry.id;
+          }
         }
-        description += `**${i + 1}.** ${tag} — **${entry.coins.toFixed(8)} coins**\n`;
+
+        description += `**${i + 1}.** ${displayName} — **${entry.coins.toFixed(8)} coins**\n`;
       }
 
       // Add global stats
