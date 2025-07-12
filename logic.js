@@ -112,6 +112,7 @@ async function getCooldown(userId) {
 }
 
 
+
 /**
  * Registra um novo usuário caso username não exista.
  * - Gera um userId numérico único, começando com 18 dígitos e aumentando se houver colisão.
@@ -177,6 +178,21 @@ async function unregisterUser(userId, sessionId) {
   // 2) deleta a sessão atual
   deleteSession(sessionId);
   return true;
+}
+
+// ────────────────────────────────────────────────────────
+// Helpers para converter valores entre satoshis (inteiro)
+// e unidade “float” com 8 casas decimais
+function toInt(rawAmount) {
+  const n = Number(rawAmount);
+  if (Number.isNaN(n)) return NaN;
+  // arredonda ao inteiro mais próximo de satoshis
+  return Math.round(n * 1e8);
+}
+
+function fromInt(intAmount) {
+  // converte de satoshis para valor float
+  return intAmount / 1e8;
 }
 
 // TRANSFERÊNCIA
@@ -430,16 +446,11 @@ async function payBillLogic(executorId, billId) {
     throw new Error('Invalid bill amount');
   }
 
-  // 3) caso de self-billing: apenas delete, registre transação e envie DM, sem alterar saldo
-  if (bill.from_id === bill.to_id) {
-    const nowIso = new Date().toISOString();
-    // registra transação usando mesmo UUID da bill
-    db.prepare(`
-      INSERT INTO transactions (id, date, from_id, to_id, amount)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(billId, nowIso, executorId, bill.to_id, amount.toFixed(8));
+  const nowIso = new Date().toISOString();
 
-    // enqueue DM de confirmação
+  // 3) caso de self-billing ou executorId igual ao destinatário: não faz transferência
+  if (bill.from_id === bill.to_id || executorId === bill.to_id) {
+    // enqueue DM de confirmação sem transação financeira
     const embedSelf = {
       type: 'rich',
       title: '🏦 Self-Bill Deleted 🏦',
@@ -451,7 +462,7 @@ async function payBillLogic(executorId, billId) {
     };
     enqueueDM(bill.to_id, embedSelf, { components: [] });
 
-    // remove a bill
+    // remove a bill sem registrar transação
     deleteBill(billId);
 
     return {
@@ -459,7 +470,7 @@ async function payBillLogic(executorId, billId) {
       toId: bill.to_id,
       amount: amount.toFixed(8),
       date: nowIso,
-      message: 'Bill deleted (self-billing)'
+      message: 'Bill deleted (self-billing, no transfer occurred)'
     };
   }
 
@@ -469,7 +480,7 @@ async function payBillLogic(executorId, billId) {
     throw new Error(`Insufficient funds: need ${amount.toFixed(8)}`);
   }
 
-  // 5) garante que o recebedor exista (sem criar automaticamente)
+  // 5) garante que o recebedor exista
   const receiver = getUser(bill.to_id);
   if (!receiver) {
     throw new Error('Receiver not found');
@@ -482,7 +493,6 @@ async function payBillLogic(executorId, billId) {
   setCoins(bill.to_id, newReceiverBalance);
 
   // 7) registra a transação usando o mesmo UUID da bill
-  const nowIso = new Date().toISOString();
   db.prepare(`
     INSERT INTO transactions (id, date, from_id, to_id, amount)
     VALUES (?, ?, ?, ?, ?)

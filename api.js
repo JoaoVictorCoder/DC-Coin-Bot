@@ -427,6 +427,13 @@ app.get('/site/', (req, res) => {
   res.sendFile(INDEX_HTML);
 });
 
+// fallback para garantir que "/" envie sempre o index.html
+app.get('/', (req, res) => {
+  res.sendFile(INDEX_HTML);
+});
+
+app.use('/', express.static(SITE_DIR));
+
 
 
 
