@@ -181,7 +181,7 @@ client.on('guildCreate', async (guild) => {
 > 
 > ⚠️ Be sure that the bot has the right permission to view the channel and send messages & embeds.
 > 
-> All the commands is better with /commands (but ! and / works)
+> All the commands is better with /commands (but !command works)
 > 
 > 📘 **List of avaliable commands:**
 > 
@@ -192,6 +192,9 @@ client.on('guildCreate', async (guild) => {
 > - \`!rank\` — shows the rank of the 25 most rich people.
 > - \`!pay @user ammount\` — example: \`!pay @user 0.01\` to send money.
 > - \`!bal\` — checks your current balance.
+> - \`!bill\` - creates a bill ID to be charged.
+> - \`!paybill\` - pays a bill ID to send money.
+> - \`!active\` - API usage only.
 > - \`!check\` — checks the ID of a transaction.
 > - \`!history\` — checks your or others transaction history.
 > - \`!card\` — generates a debit card to use in the payment api in other bots.
@@ -200,7 +203,7 @@ client.on('guildCreate', async (guild) => {
 > - \`!backup\` — creates a wallet backup to restores your coins even if this account got deleted.
 > - \`!view @user\` — example: \`!view @user\` to see another user's balance.
 > - \`!api channel_ID\` — example: \`!api 1324535042843869300\` to create an API channel for the bot.
-> - \`!set channel_ID\` — example: \`!set 1387471903832281219\` to create a atm and rewards channel for your server and improve your server's Engagement!
+> - \`!set channel_ID\` — example: \`!set 1387471903832281219\` to create a ATM and rewards channel.
 > 
 > 💛 Help this project with bitcoins donation. Any help is welcome:
 > \`\`\` bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00 \`\`\`

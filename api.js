@@ -4,6 +4,8 @@ const {
   getSession,
   deleteSession,
   createSession,
+  getUser, createUser,
+  getCardOwnerByHash,
 } = require('./database');
 const crypto = require('crypto');
 
@@ -129,6 +131,58 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'operation failed' });
     }
   });
+
+  // Realiza Transações por API via cartão (não necessita autenticar)
+  // POST /api/transfer/card
+app.post('/api/transfer/card', async (req, res) => {
+  // recebe o código puro do cartão em vez do hash
+  const { cardCode, toId, amount } = req.body || {};
+
+  // 1) Validação básica de parâmetros
+  if (!cardCode || !toId || isNaN(amount)) {
+    return res.status(400).json({ success: false });
+  }
+
+  // 2) Truncamento para 8 casas decimais
+  const amt = Math.floor(Number(amount) * 1e8) / 1e8;
+  if (isNaN(amt) || amt <= 0) {
+    return res.status(400).json({ success: false });
+  }
+
+  try {
+    // 3) Converte o código em SHA-256
+    const cardHash = crypto
+      .createHash('sha256')
+      .update(cardCode)
+      .digest('hex');
+
+    // 4) Resolução do usuário proprietário do cartão
+    const ownerId = getCardOwnerByHash(cardHash);
+    if (!ownerId) {
+      return res.status(404).json({ success: false });
+    }
+
+    // 5) Garante existência do destinatário
+    try {
+      getUser(toId);
+    } catch {
+      createUser(toId, null, null);
+    }
+
+    // 6) Realiza a transferência (self-transfer retorna txId e date nulos)
+    const { txId, date } = await logic.transferCoins(ownerId, toId, amt);
+
+    // 7) Resposta de êxito
+    return res.json({ success: true, txId, date });
+  } catch (err) {
+    // saldo insuficiente ou valor inválido
+    if (/Invalid amount|Insufficient funds/.test(err.message)) {
+      return res.json({ success: false });
+    }
+    console.error('Card transfer error:', err);
+    return res.status(500).json({ success: false });
+  }
+});
 
   // — CLAIM (exige autenticação) —
 app.post('/api/claim', authMiddleware, async (req, res) => {
@@ -438,7 +492,7 @@ app.use('/', express.static(SITE_DIR));
 
 
 
-  const port = process.env.API_PORT || 1033;
+  const port = process.env.API_PORT || 26450;
   app.listen(port, () => {
     console.log(`API REST running on port ${port}`);
   });
