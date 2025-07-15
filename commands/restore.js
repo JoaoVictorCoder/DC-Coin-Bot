@@ -24,13 +24,13 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // defer to buy time
+    // 1) defer to buy time
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     const code = interaction.options.getString('code').trim();
     let row;
 
-    // 1) lookup backup
+    // 2) lookup backup
     try {
       row = backupsDb.prepare('SELECT userId FROM backups WHERE code = ?').get(code);
     } catch (err) {
@@ -44,7 +44,7 @@ module.exports = {
     const oldId = row.userId;
     const newId = interaction.user.id;
 
-    // 2) prevent self-restore
+    // 3) prevent self-restore
     if (oldId === newId) {
       try {
         backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
@@ -56,7 +56,7 @@ module.exports = {
       ).catch(() => null);
     }
 
-    // 3) fetch old balance
+    // 4) fetch old balance
     let origin;
     try {
       origin = getUser(oldId);
@@ -75,43 +75,46 @@ module.exports = {
       return interaction.editReply('❌ That wallet has no coins.').catch(() => null);
     }
 
-    // 4) transfer funds
+    // 5) truncate to 8 decimal places
+    const truncatedBal = Math.floor(oldBal * 1e8) / 1e8;
+
+    // 6) transfer funds
     try {
-      addCoins(newId, oldBal);
+      addCoins(newId, truncatedBal);
       setCoins(oldId, 0);
     } catch (err) {
       console.error('⚠️ [/restore] Error transferring balance:', err);
       return interaction.editReply('❌ Could not transfer balance. Try again later.').catch(() => null);
     }
 
-    // 5) log transactions (best-effort)
+    // 7) log transactions (best-effort)
     const date = new Date().toISOString();
     try {
       const tx1 = genUniqueTxId();
       db.prepare(`
         INSERT INTO transactions(id, date, from_id, to_id, amount)
         VALUES (?, ?, ?, ?, ?)
-      `).run(tx1, date, oldId, newId, oldBal);
+      `).run(tx1, date, oldId, newId, truncatedBal);
 
       const tx2 = genUniqueTxId();
       db.prepare(`
         INSERT INTO transactions(id, date, from_id, to_id, amount)
         VALUES (?, ?, ?, ?, ?)
-      `).run(tx2, date, oldId, newId, oldBal);
+      `).run(tx2, date, oldId, newId, truncatedBal);
     } catch (err) {
       console.warn('⚠️ [/restore] Failed to log transactions:', err);
     }
 
-    // 6) delete used backup code
+    // 8) delete used backup code
     try {
       backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
     } catch (err) {
       console.error('⚠️ [/restore] Failed to delete used backup code:', err);
     }
 
-    // 7) final confirmation
+    // 9) final confirmation
     return interaction.editReply(
-      `🎉 Successfully restored **${oldBal.toFixed(8)} coins** to your wallet!`
+      `🎉 Successfully restored **${truncatedBal.toFixed(8)} coins** to your wallet!`
     ).catch(() => null);
   }
 };
