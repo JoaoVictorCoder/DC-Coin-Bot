@@ -327,7 +327,7 @@ function listBackups(userId) {
 
 // RESTAURAR BACKUP
 async function restoreBackup(userId, backupCode) {
-  // Busca backup para saber o userId original
+  // 1) Busca backup para saber o userId original
   const stmt = db.prepare('SELECT userId FROM backups WHERE code = ?');
   const row = stmt.get(backupCode);
 
@@ -340,7 +340,7 @@ async function restoreBackup(userId, backupCode) {
     throw new Error('Cannot restore your own backup');
   }
 
-  // Busca saldo original
+  // 2) Busca saldo original
   const originalUser = getUser(originalUserId);
   if (!originalUser) throw new Error('Original user not found');
 
@@ -351,11 +351,14 @@ async function restoreBackup(userId, backupCode) {
     throw new Error('Original wallet has no coins');
   }
 
-  // Transferência do saldo para novo usuário
-  addCoins(userId, saldoOriginal);
+  // 3) Truncamento para 8 casas decimais
+  const truncatedBal = Math.floor(saldoOriginal * 1e8) / 1e8;
+
+  // 4) Transferência do saldo truncado para o novo usuário
+  addCoins(userId, truncatedBal);
   setCoins(originalUserId, 0);
 
-  // Cria transações
+  // 5) Cria transações (best‐effort)
   const date = new Date().toISOString();
   const tx1 = genUniqueTxId();
   const tx2 = genUniqueTxId();
@@ -363,21 +366,22 @@ async function restoreBackup(userId, backupCode) {
     db.prepare(`
       INSERT INTO transactions (id, date, from_id, to_id, amount)
       VALUES (?, ?, ?, ?, ?)
-    `).run(tx1, date, originalUserId, userId, saldoOriginal);
+    `).run(tx1, date, originalUserId, userId, truncatedBal);
 
     db.prepare(`
       INSERT INTO transactions (id, date, from_id, to_id, amount)
       VALUES (?, ?, ?, ?, ?)
-    `).run(tx2, date, originalUserId, userId, saldoOriginal);
+    `).run(tx2, date, originalUserId, userId, truncatedBal);
   } catch (err) {
-    console.warn('Failed to log transactions:', err);
+    console.warn('⚠️ Failed to log transactions:', err);
   }
 
-  // Remove backup usado
+  // 6) Remove backup usado
   db.prepare('DELETE FROM backups WHERE code = ?').run(backupCode);
 
   return true;
 }
+
 
 // ATUALIZAR USUÁRIO
 async function updateUserInfo(userId, username, passwordHash) {

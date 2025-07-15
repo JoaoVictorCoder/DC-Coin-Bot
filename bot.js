@@ -1052,47 +1052,49 @@ if (cmd === '!restore' && args.length >= 1) {
     return message.reply('❌ Empty Wallet.');
   }
 
-  // 5) transfere saldo
+  // 5) truncar para 8 casas decimais
+  const truncatedBal = Math.floor(oldBal * 1e8) / 1e8;
+
+  // 6) transfere saldo
   try {
-    addCoins(newId, oldBal);
+    addCoins(newId, truncatedBal);
     setCoins(oldId, 0);
   } catch (err) {
     console.error('⚠️ Restore failed at balance transfer:', err);
     return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
   }
 
-  // 6) registra transações com IDs únicos
+  // 7) registra transações com IDs únicos
   const date = new Date().toISOString();
   try {
     const txIdOwner = genUniqueTxId();
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(txIdOwner, date, oldId, newId, oldBal);
+    `).run(txIdOwner, date, oldId, newId, truncatedBal);
 
     const txIdReceiver = genUniqueTxId();
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(txIdReceiver, date, oldId, newId, oldBal);
+    `).run(txIdReceiver, date, oldId, newId, truncatedBal);
   } catch (err) {
     console.error('⚠️ Failed to log restore transactions:', err);
     // não aborta a restauração, apenas loga
   }
 
-  // 7) deleta o código de backup (uso único)
+  // 8) deleta o código de backup (uso único)
   try {
     db.prepare('DELETE FROM backups WHERE code = ?').run(code);
   } catch (err) {
     console.error('⚠️ Failed to delete used backup code:', err);
   }
 
-  // 8) confirma no canal
+  // 9) confirma no canal
   return message.reply(
-    `🎉 Backup Restored Successfully! **${oldBal.toFixed(8)} coins** were transferred to your wallet.`
+    `🎉 Backup Restored Successfully! **${truncatedBal.toFixed(8)} coins** were transferred to your wallet.`
   );
 }
-
 
   // no seu index.js ou commands.js, onde você trata comandos de texto:
 if (cmd === '!history') {
