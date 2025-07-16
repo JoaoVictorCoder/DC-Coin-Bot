@@ -329,6 +329,37 @@ async function createBackup(userId) {
   return true;
 }
 
+/**
+ * Lista os 25 usuários com mais coins (do maior para o menor)
+ * e retorna também o total de coins em circulação.
+ *
+ * @returns {Promise<{
+ *   totalCoins: number,
+ *   rankings: Array<{ id: string, username: string, coins: number }>
+ * }>}
+ */
+async function listRank() {
+  // 1) Busca os top 25 usuários
+  const topRows = db
+    .prepare('SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 25')
+    .all();
+
+  // 2) Calcula o total de coins na tabela
+  const totalRow = db
+    .prepare('SELECT SUM(coins) AS total FROM users')
+    .get();
+  const totalCoins = totalRow.total || 0;
+
+  // 3) Monta o array de resultado
+  const rankings = topRows.map(r => ({
+    id:       r.id,
+    username: r.username ?? 'none',
+    coins:    r.coins
+  }));
+
+  return { totalCoins, rankings };
+}
+
 // LISTAR BACKUPS - retorna apenas os códigos (UUIDs)
 function listBackups(userId) {
   const stmt = db.prepare('SELECT code FROM backups WHERE userId = ?');

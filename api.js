@@ -476,6 +476,16 @@ app.get('/api/user/:userId/balance', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/rank', authMiddleware, async (req, res) => {
+  try {
+    const data = await logic.listRank();
+    return res.json(data);
+  } catch (e) {
+    console.error('Rank error:', e);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 
 
 
