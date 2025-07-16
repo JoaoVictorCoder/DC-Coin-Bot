@@ -1,6 +1,10 @@
 const {
   getUser,
+  getIp,
+  deleteIp,
+  upsertIp,
   deleteSession,
+  deleteOldSessions,
   getUserByUsername,
   createUser,
   updateUser,
@@ -31,6 +35,13 @@ const {
 
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+
+/** Normaliza ::1 / ::ffff: para IPv4 puro */
+function normalizeIp(ip) {
+  if (ip === '::1') return '127.0.0.1';
+  const v4 = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  return v4 ? v4[1] : ip;
+}
 
 // Helper para verificar hash de senha
 function verifyPassword(user, passwordHash) {
@@ -120,39 +131,39 @@ async function getCooldown(userId) {
  * - Inicializa cooldown no timestamp atual.
  * - Gera 12 backups e um cartão novo.
  */
-async function registerUser(username, password) {
-  // 1) Não permitir username duplicado
+async function registerUser(username, password, clientIp) {
+  const ipKey = normalizeIp(clientIp);
+  const now   = Date.now();
+
+  // 1) bloqueio por registro recente (type=2 < 24h)
+  const rec = getIp(ipKey);
+  if (rec && rec.type === 2 && now - rec.time < 24 * 60 * 60 * 1000) {
+    throw new Error('Block: only one account per IP every 24 hours.');
+  }
+
+  // 2) username duplicado?
   if (getUserByUsername(username)) {
     throw new Error('Username already taken');
   }
-  // 2) Hash da senha
-  const passwordHash = crypto.createHash('sha256')
-                             .update(password)
-                             .digest('hex');
 
-  // 3) Gerar userId único
-  let length = 18;
-  let userId;
-  while (true) {
-    userId = generateNumericId(length);
-    const exists = db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId);
-    if (!exists) break;
-    // se esgotou todo o espaço possível, aumenta o tamanho e tenta de novo
-    length++;
-  }
+  // 3) hash da senha
+  const passwordHash = crypto
+    .createHash('sha256')
+    .update(password)
+    .digest('hex');
 
-  // 4) Criar usuário no banco
+  // 4) gera e insere userId…
+  let length = 18, userId;
+  do {
+    userId = Array(length).fill(0).map(() => Math.floor(Math.random()*10)).join('');
+    length += db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId) ? 1 : 0;
+  } while (length > 18 && db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId));
+
   createUser(userId, username, passwordHash);
-
-  // 5) Inicializar cooldown agora
-  const now = Date.now();
   db.prepare('UPDATE users SET cooldown = ? WHERE id = ?').run(now, userId);
 
-  // 6) Gerar 12 backups
-  await createBackup(userId);
-
-  // 7) Gerar cartão inicial
-  resetCard(userId);
+  // 5) grava bloqueio de registro (type=2)
+  upsertIp(ipKey, 2, now);
 
   return userId;
 }
@@ -587,6 +598,26 @@ async function logoutUser(userId, sessionId) {
   deleteSession(sessionId);
   return true;
 }
+
+// função para limpar IPs type=2 com time ≤ agora−24h
+function cleanOldIps() {
+  const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+  const info = db
+    .prepare('DELETE FROM ips WHERE type = 2 AND time <= ?')
+    .run(cutoffMs);
+  console.log(`🗑️  Removed ${info.changes} old IP-block records (>24h)`);
+}
+
+// agendamento diário de limpeza
+setInterval(() => {
+  // limpa sessões com created_at ≤ agora−24h (created_at em segundos)
+  const cutoffSec = Math.floor(Date.now()/1000) - 24 * 60 * 60;
+  const removed  = deleteOldSessions(cutoffSec);
+  console.log(`🗑️  Removed ${removed} expired sessions (>24h)`);
+
+  // limpa IP-blocks type=2 antigos
+  cleanOldIps();
+}, 24 * 60 * 60 * 1000);
 
 module.exports = {
   authenticate,

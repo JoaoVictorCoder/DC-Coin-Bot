@@ -102,17 +102,30 @@ app.post('/api/account/unregister', authMiddleware, async (req, res) => {
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
+    return res
+      .status(400)
+      .json({ success: false, error: 'Username and password required.' });
   }
+
   try {
-    // 1) registra usuário
-    const userId = await logic.registerUser(username, password);
-    // 2) cria sessão nova
+    const userId    = await logic.registerUser(username, password, req.ip);
     const sessionId = createSession(userId);
     return res.json({ success: true, userId, sessionId });
   } catch (err) {
     console.error('Register error:', err);
-    return res.status(500).json({ error: err.message || 'Internal error' });
+    if (err.message.startsWith('Block:')) {
+      return res
+        .status(429)
+        .json({ success: false, error: err.message });
+    }
+    if (err.message === 'Username already taken') {
+      return res
+        .status(409)
+        .json({ success: false, error: err.message });
+    }
+    return res
+      .status(500)
+      .json({ success: false, error: 'Internal error.' });
   }
 });
 

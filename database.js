@@ -40,6 +40,81 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ips (
+    ip_address TEXT    PRIMARY KEY,
+    type       INTEGER NOT NULL,
+    time       INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_ips_type ON ips(type);
+  CREATE INDEX IF NOT EXISTS idx_ips_time ON ips(time);
+`);
+
+// — IPS CRUD — adicione estas funções em database.js, após a criação da tabela ips
+
+/**
+ * Insere ou atualiza um registro de IP na tabela ips.
+ * @param {string} ip_address  IP normalizado (texto)
+ * @param {number} type        1 = login fail, 2 = account register
+ * @param {number} time        timestamp em ms
+ */
+function upsertIp(ip_address, type, time) {
+  db.prepare(`
+    INSERT INTO ips (ip_address, type, time)
+    VALUES (?, ?, ?)
+    ON CONFLICT(ip_address) DO UPDATE SET
+      type = excluded.type,
+      time = excluded.time
+  `).run(ip_address, type, time);
+}
+
+/**
+ * Busca um registro de IP pelo endereço.
+ * @param {string} ip_address
+ * @returns {{ ip_address: string, type: number, time: number }|undefined}
+ */
+function getIp(ip_address) {
+  return db
+    .prepare('SELECT ip_address, type, time FROM ips WHERE ip_address = ?')
+    .get(ip_address);
+}
+
+/**
+ * Remove um registro de IP específico.
+ * @param {string} ip_address
+ */
+function deleteIp(ip_address) {
+  db.prepare('DELETE FROM ips WHERE ip_address = ?')
+    .run(ip_address);
+}
+
+/**
+ * Limpa registros de IP antigos:
+ * - type = 1 com time ≤ agora–1min
+ * - type = 2 com time ≤ agora–24h
+ *
+ * @returns {{ removedType1: number, removedType2: number }}
+ */
+function cleanOldIps() {
+  const now      = Date.now();
+  const oneMin   = now - 60 * 1000;
+  const oneDay   = now - 24 * 60 * 60 * 1000;
+
+  const info1 = db
+    .prepare('DELETE FROM ips WHERE type = 1 AND time <= ?')
+    .run(oneMin);
+
+  const info2 = db
+    .prepare('DELETE FROM ips WHERE type = 2 AND time <= ?')
+    .run(oneDay);
+
+  return {
+    removedType1: info1.changes,
+    removedType2: info2.changes
+  };
+}
+
+
 // 3) Migração: adiciona coluna card_hash se ainda não existir
 const cardCols = db.prepare(`PRAGMA table_info(cards)`).all().map(c => c.name);
 if (!cardCols.includes('card_hash')) {
@@ -153,7 +228,10 @@ function setCoins(id, amount) {
 }
 function addCoins(id, amount) {
   getUser(id);
-  db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(amount, id);
+  // Arredonda o saldo a 8 casas decimais para evitar erros de ponto-flutuante
+  db.prepare(
+    'UPDATE users SET coins = ROUND(coins + ?, 8) WHERE id = ?'
+  ).run(amount, id);
 }
 function setCooldown(id, ts) {
   getUser(id);
@@ -411,8 +489,8 @@ function dbGetCooldown(id) {
 
 
 module.exports = {
-  createSession, getSession,
-  deleteOldSessions, db,
+  createSession, getSession, upsertIp, cleanOldIps,
+  deleteOldSessions, db, deleteIp, getIp,
   // users
   getUser, setCoins, addCoins,
   getCooldown, setCooldown, deleteBackupByCode,
