@@ -21,7 +21,7 @@ const {
   wasNotified,
   setNotified,
   getCardCodeByOwnerId,
-  resetCard,
+  resetCard, createCard,
   enqueueDM,
   getNextDM,
   deleteDM,
@@ -161,6 +161,7 @@ async function registerUser(username, password, clientIp) {
 
   createUser(userId, username, passwordHash);
   db.prepare('UPDATE users SET cooldown = ? WHERE id = ?').run(now, userId);
+  const cardCode = createCard(userId);
 
   // 5) grava bloqueio de registro (type=2)
   upsertIp(ipKey, 2, now);
@@ -320,10 +321,11 @@ async function createBackup(userId) {
 
   for (let i = 0; i < toCreate; i++) {
     // Gera UUID v4 completo, sem limite de 12 dígitos
-    const code = uuidv4();  // ex: "3f9d13e4-2c5f-4a7b-9b8a-1d2e3f4a5b6c"
+    const raw = uuidv4().replace(/-/g, '');  // ex: "3f9d13e4-2c5f-4a7b-9b8a-1d2e3f4a5b6c"
+    const code = raw.slice(0, 24);
 
     // Insere no banco
-    db.prepare('INSERT INTO backups (code, userId) VALUES (?, ?)').run(code, userId);
+    db.prepare('INSERT INTO backups (code, user_id) VALUES (?, ?)').run(code, userId);
   }
 
   return true;
@@ -362,7 +364,7 @@ async function listRank() {
 
 // LISTAR BACKUPS - retorna apenas os códigos (UUIDs)
 function listBackups(userId) {
-  const stmt = db.prepare('SELECT code FROM backups WHERE userId = ?');
+  const stmt = db.prepare('SELECT code FROM backups WHERE user_id = ?');
   const rows = stmt.all(userId);
   return rows.map(r => r.code);
 }
@@ -370,7 +372,7 @@ function listBackups(userId) {
 // RESTAURAR BACKUP
 async function restoreBackup(userId, backupCode) {
   // 1) Busca backup para saber o userId original
-  const stmt = db.prepare('SELECT userId FROM backups WHERE code = ?');
+  const stmt = db.prepare('SELECT user_id FROM backups WHERE code = ?');
   const row = stmt.get(backupCode);
 
   if (!row) throw new Error('Backup code not found');
