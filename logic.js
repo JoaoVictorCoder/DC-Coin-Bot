@@ -325,7 +325,7 @@ async function createBackup(userId) {
     const code = raw.slice(0, 24);
 
     // Insere no banco
-    db.prepare('INSERT INTO backups (code, user_id) VALUES (?, ?)').run(code, userId);
+    db.prepare('INSERT INTO backups (code, userId) VALUES (?, ?)').run(code, userId);
   }
 
   return true;
@@ -364,7 +364,7 @@ async function listRank() {
 
 // LISTAR BACKUPS - retorna apenas os códigos (UUIDs)
 function listBackups(userId) {
-  const stmt = db.prepare('SELECT code FROM backups WHERE user_id = ?');
+  const stmt = db.prepare('SELECT code FROM backups WHERE userId = ?');
   const rows = stmt.all(userId);
   return rows.map(r => r.code);
 }
@@ -372,7 +372,7 @@ function listBackups(userId) {
 // RESTAURAR BACKUP
 async function restoreBackup(userId, backupCode) {
   // 1) Busca backup para saber o userId original
-  const stmt = db.prepare('SELECT user_id FROM backups WHERE code = ?');
+  const stmt = db.prepare('SELECT userId FROM backups WHERE code = ?');
   const row = stmt.get(backupCode);
 
   if (!row) throw new Error('Backup code not found');

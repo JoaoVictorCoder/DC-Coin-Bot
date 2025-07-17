@@ -16,6 +16,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const logic = require('./logic');
 const database = require('./database.js');
 const {
   getUser, setCoins, addCoins, db, getBill, deleteBill, createUser,
@@ -187,12 +188,13 @@ client.on('guildCreate', async (guild) => {
 > 
 > - \`!global\` - shows the economy information.
 > - \`!help\` - shows you the help menu.
-> - \`!ajuda\` - shows you the help menu in portuguese.
+> - \`/ajuda\` - shows you the help menu in portuguese.
 > - \`!user\` - changes your account info.
 > - \`!rank\` — shows the rank of the 25 most rich people.
 > - \`!pay @user ammount\` — example: \`!pay @user 0.01\` to send money.
 > - \`!bal\` — checks your current balance.
 > - \`!bill\` - creates a bill ID to be charged.
+> - \`!bills\` - shows a list of all your bills.
 > - \`!paybill\` - pays a bill ID to send money.
 > - \`!active\` - API usage only.
 > - \`!check\` — checks the ID of a transaction.
@@ -623,9 +625,10 @@ if (cmd === '!help') {
     .setColor('#00BFFF')
     .setTitle('🤖 Comandos disponíveis')
     .addFields(
-      { name: '💰 Economy',    value: '!bal, !rank, !pay' },
-      { name: '🎁 Rewards',    value: '!set' },
-      { name: '💸 Commands',   value: '!view, !check, !history' },
+      { name: '💰 Economy',    value: '!bal, !rank, !pay, !paybill, !restore' },
+      { name: '🎁 Rewards',    value: '!set, !claim' },
+      { name: '💸 Commands',   value: '!view, !check, !history, !bills' },
+      { name: '🎓 User',   value: '!user, !backup, !global, !card, !cardreset' },
       { name: '🆘 Help',       value: '!help' }
     );
 
@@ -1298,6 +1301,83 @@ if (cmd === '!verify') {
 
   // 4) responde true ou false
   return safeReply(`${id}:${found ? 'true' : 'false'}`);
+}
+
+if (cmd === '!bills') {
+  const channel   = message.channel;
+  const guild     = message.guild;
+  const userId    = message.author.id;
+  const botMember = guild?.members.cache.get(client.user.id);
+
+  // 1) Verifica permissões de envio e anexar
+  const canSend   = !guild || channel.permissionsFor(botMember).has('SendMessages');
+  const canAttach = !guild || channel.permissionsFor(botMember).has('AttachFiles');
+  if (!canSend) return; // sem permissão para sequer enviar mensagem
+
+  // 2) Busca todas as bills “de” e “para” o usuário
+  let bills;
+  try {
+    const toPay     = await logic.getBillsTo(userId, 1);   // faturas que você deve pagar :contentReference[oaicite:0]{index=0}
+    const toReceive = await logic.getBillsFrom(userId, 1); // faturas que você vai receber :contentReference[oaicite:1]{index=1}
+    bills = [...toPay, ...toReceive];
+  } catch (err) {
+    console.error('⚠️ Bills listing failure:', err);
+    return channel.send('❌ Cannot find your bills.');
+  }
+
+  if (bills.length === 0) {
+    return channel.send('ℹ️ You do not have pending bills.');
+  }
+
+  // 3) Formata o conteúdo do arquivo
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const { AttachmentBuilder } = require('discord.js');
+
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+  const lines = bills.map(b =>
+    [
+      `BILL ID : ${b.id}`,
+      `FROM    : ${b.from_id}`,
+      `TO      : ${b.to_id}`,
+      `AMOUNT  : ${b.amount}`,
+      `DATE    : ${new Date(b.date).toLocaleString()}`
+    ].join(os.EOL)
+  );
+  const content = lines.join(os.EOL + os.EOL);
+
+  const fileName = `${userId}_bills.txt`;
+  const filePath = path.join(tempDir, fileName);
+
+  try {
+    fs.writeFileSync(filePath, content, 'utf8');
+  } catch (err) {
+    console.error('⚠️ Bills file creating failure:', err);
+  }
+
+  // 4) Envia a mensagem, anexando o TXT se possível
+  try {
+    const payload = { content: `📋 **Your bills (${bills.length}):**\n` +
+      bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
+    };
+    if (canAttach && fs.existsSync(filePath)) {
+      payload.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
+    }
+    await channel.send(payload);
+  } catch (err) {
+    console.warn('⚠️ Bills file attach failure:', err);
+    // fallback: apenas lista IDs no chat
+    await channel.send(
+      `📋 **Suas bills (${bills.length}):**\n` +
+      bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
+    );
+  } finally {
+    // 5) Limpa arquivo temporário
+    try { fs.unlinkSync(filePath); } catch {}
+  }
 }
 
 if (cmd === '!global') {
