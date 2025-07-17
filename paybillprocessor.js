@@ -10,6 +10,10 @@ const {
   enqueueDM
 } = require('./database');
 
+const {
+  processDMQueue
+} = require('./dmQueue');
+
 /**
  * Registers a handler to process /paybill modal submissions.
  * @param {import('discord.js').Client} client
