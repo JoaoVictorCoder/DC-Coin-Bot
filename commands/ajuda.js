@@ -16,8 +16,8 @@ module.exports = {
         .setColor('#00BFFF')
         .setTitle('🤖 Comandos Disponíveis')
         .addFields(
-          { name: '💰 Economia',    value: '/bal, /rank, /pay, /card, /cardreset' },
-          { name: '🎁 Recompensas', value: '/set, /claim' },
+          { name: '💰 Economia',    value: '/bal, /rank, /pay, /card, /cardreset, /bills, /bill, /paybill' },
+          { name: '🎁 Recompensas', value: '/set, /claim, /global' },
           { name: '💸 Utilitários', value: '/view, /remind, /history, /check, /backup, /restore' },
           { name: '📖 API',         value: '/api' },
           { name: '🆘 Ajuda',       value: '/ajuda, /help' }
