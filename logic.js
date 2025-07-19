@@ -30,6 +30,8 @@ const {
   getBill,
   deleteBill,
   dbGetCooldown,
+  toSats,
+  fromSats,
   db
 } = require('./database');
 
@@ -63,35 +65,124 @@ async function authenticate(userId, sessionId, passwordHash) {
 }
 
 // LOGIN - retorna sessão criada, saldo e cooldown restantes
-async function login(username, passwordHash) {
+async function login(username, passwordHash, ipAddress) {
+  if (!ipAddress) {
+    throw new Error('IP não informado ao chamar login()');
+  }
+
+  const now         = Date.now();
+  const maxAttempts = 3;
+  const blockWindow = 5 * 60 * 1000; // 5 minutos
+
+  // 1) Carrega registro de tentativas deste IP (type = 1)
+  const ipRec = db
+    .prepare(`SELECT try, time FROM ips WHERE ip_address = ? AND type = 1`)
+    .get(ipAddress);
+
+  // 1a) Se já atingiu maxAttempts e ainda estiver dentro do bloqueio, recusa
+  if (ipRec?.try >= maxAttempts) {
+    const elapsed = now - ipRec.time;
+    if (elapsed < blockWindow) {
+      return {
+        sessionCreated:   false,
+        passwordCorrect:  false,
+        error:            'IP_LOCKED',
+        retryAfterMs:     blockWindow - elapsed
+      };
+    }
+    // bloqueio expirou, continua e registrará nova falha se necessário
+  }
+
+  // 2) Busca o usuário
   const user = getUserByUsername(username);
-  if (!user) return { sessionCreated: false, passwordCorrect: false };
+  if (!user) {
+    // registra falha de IP
+    if (ipRec) {
+      if (ipRec.try < maxAttempts) {
+        db.prepare(`
+          UPDATE ips
+          SET try = ?, time = ?
+          WHERE ip_address = ? AND type = 1
+        `).run(ipRec.try + 1, now, ipAddress);
+      } else {
+        // já estava em bloqueio expirado → só atualiza time para estender o bloqueio
+        db.prepare(`
+          UPDATE ips
+          SET time = ?
+          WHERE ip_address = ? AND type = 1
+        `).run(now, ipAddress);
+      }
+    } else {
+      // primeira tentativa deste IP
+      db.prepare(`
+        INSERT INTO ips (ip_address, type, time, try)
+        VALUES (?, 1, ?, 1)
+      `).run(ipAddress, now);
+    }
+    return { sessionCreated: false, passwordCorrect: false };
+  }
 
-  if (!verifyPassword(user, passwordHash)) return { sessionCreated: false, passwordCorrect: false };
+  // 3) Verifica a senha
+  if (!verifyPassword(user, passwordHash)) {
+    // mesma lógica de falha de IP
+    if (ipRec) {
+      if (ipRec.try < maxAttempts) {
+        db.prepare(`
+          UPDATE ips
+          SET try = ?, time = ?
+          WHERE ip_address = ? AND type = 1
+        `).run(ipRec.try + 1, now, ipAddress);
+      } else {
+        db.prepare(`
+          UPDATE ips
+          SET time = ?
+          WHERE ip_address = ? AND type = 1
+        `).run(now, ipAddress);
+      }
+    } else {
+      db.prepare(`
+        INSERT INTO ips (ip_address, type, time, try)
+        VALUES (?, 1, ?, 1)
+      `).run(ipAddress, now);
+    }
+    return { sessionCreated: false, passwordCorrect: false };
+  }
 
-  // Deleta sessões antigas
+  // 4) Login bem-sucedido → remove bloqueio de IP
+  db.prepare(`
+    DELETE FROM ips
+    WHERE ip_address = ? AND type = 1
+  `).run(ipAddress);
+
+  // 5) Deleta sessões antigas do usuário
   const sessions = getSessionsByUserId(user.id);
   for (const s of sessions) {
     deleteSession(s.session_id);
   }
 
-  // Cria nova sessão
+  // 6) Cria nova sessão
   const newSessionId = createSession(user.id);
 
-  // Dados iniciais
-  const saldo = user.coins || 0;
-  const cooldownMs = getCooldown(user.id);
-  const now = Date.now();
+  // 7) Gera um card para o usuário caso ainda não tenha
+  const existingCard = getCardCodeByOwnerId(user.id);
+  if (!existingCard) {
+    createCard(user.id);
+  }
+
+  // 8) Monta retorno com saldo e cooldown de usuário
+  const saldo      = fromSats(user.coins || 0);
+  const cooldownMs = getCooldown(user.id) || 0;
 
   return {
-    sessionCreated: true,
-    passwordCorrect: true,
-    userId: user.id,
-    sessionId: newSessionId,
+    sessionCreated:     true,
+    passwordCorrect:    true,
+    userId:             user.id,
+    sessionId:          newSessionId,
     saldo,
-    cooldownRemainingMs: Math.max(0, cooldownMs - now),
+    cooldownRemainingMs: Math.max(0, cooldownMs - Date.now()),
   };
 }
+
 
 // BUSCAR ID POR USERNAME
 async function getUserIdByUsername(username) {
@@ -103,7 +194,7 @@ async function getUserIdByUsername(username) {
 async function getSaldo(userId) {
   const user = getUser(userId);
   if (!user) return null;
-  return user.coins || 0;
+  return fromSats(user.coins || 0);
 }
 
 function generateNumericId(length) {
@@ -174,10 +265,21 @@ async function getTransactions(userId, page = 1) {
   const limit = 20;
   const offset = (page - 1) * limit;
   const stmt = db.prepare(`
-    SELECT * FROM transactions WHERE from_id = ? OR to_id = ?
-    ORDER BY date DESC LIMIT ? OFFSET ?
+    SELECT id, date, from_id, to_id, amount
+      FROM transactions
+     WHERE from_id = ? OR to_id = ?
+     ORDER BY date DESC
+     LIMIT ? OFFSET ?
   `);
-  return stmt.all(userId, userId, limit, offset);
+
+  const rows = stmt.all(userId, userId, limit, offset);
+  return rows.map(r => ({
+    id:      r.id,
+    date:    r.date,
+    from_id: r.from_id,
+    to_id:   r.to_id,
+    amount:  fromSats(r.amount || 0)
+  }));
 }
 
 /**
@@ -192,76 +294,58 @@ async function unregisterUser(userId, sessionId) {
   return true;
 }
 
-// ────────────────────────────────────────────────────────
-// Helpers para converter valores entre satoshis (inteiro)
-// e unidade “float” com 8 casas decimais
-function toInt(rawAmount) {
-  const n = Number(rawAmount);
-  if (Number.isNaN(n)) return NaN;
-  // arredonda ao inteiro mais próximo de satoshis
-  return Math.round(n * 1e8);
-}
-
-function fromInt(intAmount) {
-  // converte de satoshis para valor float
-  return intAmount / 1e8;
-}
 
 // TRANSFERÊNCIA
 // TRANSFERÊNCIA (via API — já autenticado pelo middleware)
 async function transferCoins(userId, toId, rawAmount) {
-  // 0) evita self-transfer: nada acontece se enviar para si mesmo
+  // 0) no-op if transferring to yourself
   if (userId === toId) {
-    // retorna sem debitar, creditar ou criar transação
     return { txId: null, date: null };
   }
 
-  // 1) converte para inteiro de satoshis
-  const amountInt = toInt(rawAmount);
-  if (!Number.isInteger(amountInt) || amountInt <= 0) {
+  // 1) convert to integer satoshis
+  const amountSats = toSats(rawAmount.toString());
+  if (!Number.isInteger(amountSats) || amountSats <= 0) {
     throw new Error('Invalid amount');
   }
 
-  // 2) buscar remetente
+  // 2) fetch sender and check funds
   const sender = getUser(userId);
   if (!sender) {
     throw new Error('Sender not found');
   }
-  // pega saldo inteiro
-  const senderInt = toInt(sender.coins);
-  if (senderInt < amountInt) {
+  if (sender.coins < amountSats) {
     throw new Error('Insufficient funds');
   }
 
-  // 3) buscar ou criar receptor
+  // 3) fetch or create receiver
   let receiver = getUser(toId);
   if (!receiver) {
-    createUser(toId, null, null);
+    createUser(toId);
     receiver = getUser(toId);
   }
-  const receiverInt = toInt(receiver.coins);
 
-  // 4) calcula novos saldos em inteiro
-  const newSenderInt   = senderInt - amountInt;
-  const newReceiverInt = receiverInt + amountInt;
+  // 4) compute new balances
+  const newSenderBalance   = sender.coins   - amountSats;
+  const newReceiverBalance = receiver.coins + amountSats;
 
-  // 5) atomiza débito, crédito e registro
-  const transferTxn = db.transaction(() => {
-    db.prepare('UPDATE users SET coins = ? WHERE id = ?')
-      .run(fromInt(newSenderInt), userId);
+  // 5) perform atomic updates and log transaction
+  const { txId, date } = db.transaction(() => {
+    // update balances (stored as integer satoshis)
+    setCoins(userId,   newSenderBalance);
+    setCoins(toId,     newReceiverBalance);
 
-    db.prepare('UPDATE users SET coins = ? WHERE id = ?')
-      .run(fromInt(newReceiverInt), toId);
+    // create transaction record
+    const txId = genUniqueTxId();
+    const date = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(txId, date, userId, toId, amountSats);
 
-    // registra transação
-    return genAndCreateTransaction(
-      userId,
-      toId,
-      fromInt(amountInt).toFixed(8)
-    );
-  });
+    return { txId, date };
+  })();
 
-  const { txId, date } = transferTxn();
   return { txId, date };
 }
 
@@ -269,32 +353,36 @@ async function transferCoins(userId, toId, rawAmount) {
 
 // CLAIM
 async function claimCoins(userId) {
+  // 1) check cooldown
   const last = getCooldown(userId);
   const now  = Date.now();
-  const claim_amount = '000000000000';
-
-  // Valor do claim e cooldown fixos (24h)
-  const claimValue    = 1;
-  const claimCooldown = 24 * 60 * 60 * 1000;
+  const claimCooldown = 24 * 60 * 60 * 1000; // 24h
 
   if (now - last < claimCooldown) {
     throw new Error('Cooldown active');
   }
 
-  // Concede coins e atualiza cooldown/notified
-  addCoins(userId, claimValue);
+  // 2) define reward in satoshis
+  const claimSats = toSats('1');
+
+  // 3) grant coins and update cooldown/notified
+  addCoins(userId, claimSats);
   setCooldown(userId, now);
   setNotified(userId, false);
 
-  // Registra a transação corretamente:
-  // de null (sistema) para o usuário, no valor claimValue
-  genAndCreateTransaction(
-    claim_amount,       // from_id (sistema)
-    userId,     // to_id (quem recebe)
-    claimValue  // amount
-  );
+  // 4) log the transaction (system → user)
+  const txId = genUniqueTxId();
+  const date = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO transactions(id, date, from_id, to_id, amount)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(txId, date, '000000000000', userId, claimSats);
 
-  return { success: true, claimed: claimValue };
+  // 5) return result in decimal form
+  return {
+    success: true,
+    claimed: fromSats(claimSats)
+  };
 }
 
 
@@ -335,32 +423,37 @@ async function createBackup(userId) {
  * Lista os 25 usuários com mais coins (do maior para o menor)
  * e retorna também o total de coins em circulação.
  *
- * @returns {Promise<{
- *   totalCoins: number,
- *   rankings: Array<{ id: string, username: string, coins: number }>
- * }>}
+ * @returns {{
+ *   totalCoins: string,             // valor em decimal (string) para manter precisão
+ *   rankings: Array<{
+ *     id: string,
+ *     username: string,
+ *     coins: string                 // valor em decimal (string)
+ *   }>
+ * }}
  */
-async function listRank() {
-  // 1) Busca os top 25 usuários
+function listRank() {
+  // 1) Busca os top 25 usuários (satoshis inteiros)
   const topRows = db
     .prepare('SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 25')
     .all();
 
-  // 2) Calcula o total de coins na tabela
+  // 2) Calcula o total de coins em satoshis e converte
   const totalRow = db
     .prepare('SELECT SUM(coins) AS total FROM users')
     .get();
-  const totalCoins = totalRow.total || 0;
+  const totalCoins = fromSats(totalRow.total || 0);
 
-  // 3) Monta o array de resultado
+  // 3) Monta o array de resultado, convertendo cada saldo
   const rankings = topRows.map(r => ({
     id:       r.id,
     username: r.username ?? 'none',
-    coins:    r.coins
+    coins:    fromSats(r.coins || 0)
   }));
 
   return { totalCoins, rankings };
 }
+
 
 // LISTAR BACKUPS - retorna apenas os códigos (UUIDs)
 function listBackups(userId) {
@@ -371,60 +464,59 @@ function listBackups(userId) {
 
 // RESTAURAR BACKUP
 async function restoreBackup(userId, backupCode) {
-  // 1) Busca backup para saber o userId original
-  const stmt = db.prepare('SELECT userId FROM backups WHERE code = ?');
-  const row = stmt.get(backupCode);
-
-  if (!row) throw new Error('Backup code not found');
-
+  // 1) Fetch backup record
+  const row = db.prepare('SELECT userId FROM backups WHERE code = ?').get(backupCode);
+  if (!row) {
+    throw new Error('Backup code not found');
+  }
   const originalUserId = row.userId;
+
+  // Prevent restoring your own backup
   if (originalUserId === userId) {
-    // Se tentar restaurar o próprio backup, delete código e falhe
     db.prepare('DELETE FROM backups WHERE code = ?').run(backupCode);
     throw new Error('Cannot restore your own backup');
   }
 
-  // 2) Busca saldo original
+  // 2) Retrieve original user’s satoshi balance
   const originalUser = getUser(originalUserId);
-  if (!originalUser) throw new Error('Original user not found');
-
-  const saldoOriginal = originalUser.coins || 0;
-  if (saldoOriginal <= 0) {
-    // Remove backup vazio
+  if (!originalUser) {
+    throw new Error('Original user not found');
+  }
+  const satBalance = originalUser.coins || 0;
+  if (satBalance <= 0) {
+    // Clean up empty backup
     db.prepare('DELETE FROM backups WHERE code = ?').run(backupCode);
     throw new Error('Original wallet has no coins');
   }
 
-  // 3) Truncamento para 8 casas decimais
-  const truncatedBal = Math.floor(saldoOriginal * 1e8) / 1e8;
-
-  // 4) Transferência do saldo truncado para o novo usuário
-  addCoins(userId, truncatedBal);
+  // 3) Transfer full balance
+  addCoins(userId, satBalance);
   setCoins(originalUserId, 0);
 
-  // 5) Cria transações (best‐effort)
+  // 4) Log two transactions (best‐effort)
   const date = new Date().toISOString();
-  const tx1 = genUniqueTxId();
-  const tx2 = genUniqueTxId();
   try {
+    const tx1 = genUniqueTxId();
     db.prepare(`
-      INSERT INTO transactions (id, date, from_id, to_id, amount)
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?, ?, ?, ?, ?)
-    `).run(tx1, date, originalUserId, userId, truncatedBal);
+    `).run(tx1, date, originalUserId, userId, satBalance);
 
+    const tx2 = genUniqueTxId();
     db.prepare(`
-      INSERT INTO transactions (id, date, from_id, to_id, amount)
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?, ?, ?, ?, ?)
-    `).run(tx2, date, originalUserId, userId, truncatedBal);
+    `).run(tx2, date, originalUserId, userId, satBalance);
   } catch (err) {
     console.warn('⚠️ Failed to log transactions:', err);
   }
 
-  // 6) Remove backup usado
+  // 5) Remove used backup code
   db.prepare('DELETE FROM backups WHERE code = ?').run(backupCode);
 
   return true;
 }
+
 
 
 // ATUALIZAR USUÁRIO
@@ -451,23 +543,30 @@ function parseDuration(str) {
 }
 
 async function createBillLogic(fromId, toId, amountStr, time) {
-  // 1) interpreta duration ou timestamp
-  let date;
+  // 1) interpreta duração ou timestamp
+  let expirationTimestamp;
   if (typeof time === 'string') {
     const delta = parseDuration(time);
-    if (!delta) throw new Error('Invalid time format for bill expiration');
-    date = Date.now() + delta;
+    if (!delta) {
+      throw new Error('Invalid time format for bill expiration');
+    }
+    expirationTimestamp = Date.now() + delta;
   } else if (typeof time === 'number') {
-    date = time;
+    expirationTimestamp = time;
   } else {
-    date = Date.now();
+    expirationTimestamp = Date.now();
   }
 
-  // 2) chama a função CORRETA do database.js
-  //    (ela gera o billId internamente e retorna esse valor)
-  const billId = createBill(fromId || '', toId, amountStr, date);
+  // 2) converte valor decimal em satoshis (inteiro)
+  const amountSats = toSats(amountStr.toString());
+  if (!Number.isInteger(amountSats) || amountSats <= 0) {
+    throw new Error('Invalid bill amount');
+  }
 
-  // 3) devolve exatamente esse ID
+  // 3) cria a fatura no banco (gera e retorna billId internamente)
+  const billId = createBill(fromId || '', toId, amountSats, expirationTimestamp);
+
+  // 4) retorna o identificador gerado
   return { success: true, billId };
 }
 
@@ -481,96 +580,91 @@ async function payBillLogic(executorId, billId) {
     throw new Error('Missing parameters for payBill');
   }
 
-  // 1) busca a fatura
+  // 1) fetch the bill record
   const bill = getBill(billId);
   if (!bill) {
     throw new Error('Bill not found');
   }
 
-  // 2) extrai e valida valor truncado
-  let amount = parseFloat(bill.amount);
-  amount = Math.floor(amount * 1e8) / 1e8;
-  if (isNaN(amount) || amount <= 0) {
+  // 2) valor em satoshis (INTEGER) já armazenado
+  const amountSats = bill.amount;
+  if (!Number.isInteger(amountSats) || amountSats <= 0) {
     throw new Error('Invalid bill amount');
   }
 
   const nowIso = new Date().toISOString();
 
-  // 3) caso de self-billing ou executorId igual ao destinatário: não faz transferência
+  // 3) self-bill: sem transferência, só notifica e deleta
   if (bill.from_id === bill.to_id || executorId === bill.to_id) {
-    // enqueue DM de confirmação sem transação financeira
-    const embedSelf = {
+    enqueueDM(bill.to_id, {
       type: 'rich',
       title: '🏦 Self-Bill Deleted 🏦',
       description: [
-        `**${amount.toFixed(8)}** coins`,
+        `**${fromSats(amountSats)}** coins`,
         `Bill ID: \`${billId}\``,
         '*No funds moved - self-billing*'
       ].join('\n')
-    };
-    enqueueDM(bill.to_id, embedSelf, { components: [] });
+    }, { components: [] });
 
-    // remove a bill sem registrar transação
     deleteBill(billId);
 
     return {
       billId,
-      toId: bill.to_id,
-      amount: amount.toFixed(8),
-      date: nowIso,
+      toId:   bill.to_id,
+      amount: fromSats(amountSats),
+      date:   nowIso,
       message: 'Bill deleted (self-billing, no transfer occurred)'
     };
   }
 
-  // 4) garante que o pagador exista e tenha fundos
+  // 4) garante que o pagador existe e tem saldo
   const payer = getUser(executorId);
-  if (!payer || payer.coins < amount) {
-    throw new Error(`Insufficient funds: need ${amount.toFixed(8)}`);
+  if (!payer || payer.coins < amountSats) {
+    throw new Error(`Insufficient funds: need ${fromSats(amountSats)}`);
   }
 
-  // 5) garante que o recebedor exista
+  // 5) garante que o recebedor existe
   const receiver = getUser(bill.to_id);
   if (!receiver) {
     throw new Error('Receiver not found');
   }
 
-  // 6) atualiza saldos truncados
-  const newPayerBalance    = Math.floor((payer.coins - amount) * 1e8) / 1e8;
-  const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
-  setCoins(executorId, newPayerBalance);
-  setCoins(bill.to_id, newReceiverBalance);
+  // 6) calcula novos saldos e grava
+  const newPayerBalance    = payer.coins   - amountSats;
+  const newReceiverBalance = receiver.coins + amountSats;
+  setCoins(executorId,      newPayerBalance);
+  setCoins(bill.to_id,      newReceiverBalance);
 
-  // 7) registra a transação usando o mesmo UUID da bill
+  // 7) registra transação usando billId como tx id
   db.prepare(`
     INSERT INTO transactions (id, date, from_id, to_id, amount)
     VALUES (?, ?, ?, ?, ?)
-  `).run(billId, nowIso, executorId, bill.to_id, amount.toFixed(8));
+  `).run(billId, nowIso, executorId, bill.to_id, amountSats);
 
-  // 8) enqueue DM de confirmação ao recebedor
-  const embedObj = {
+  // 8) notifica recebedor
+  enqueueDM(bill.to_id, {
     type: 'rich',
     title: '🏦 Bill Paid 🏦',
     description: [
-      `**${amount.toFixed(8)}** coins`,
+      `**${fromSats(amountSats)}** coins`,
       `From: \`${executorId}\``,
       `Bill ID: \`${billId}\``,
       '*Received ✅*'
     ].join('\n')
-  };
-  enqueueDM(bill.to_id, embedObj, { components: [] });
+  }, { components: [] });
 
-  // 9) remove a fatura paga
+  // 9) remove a fatura
   deleteBill(billId);
 
-  return { billId, toId: bill.to_id, amount: amount.toFixed(8), date: nowIso };
+  // 10) retorna detalhes
+  return {
+    billId,
+    toId:   bill.to_id,
+    amount: fromSats(amountSats),
+    date:   nowIso
+  };
 }
 
-
-module.exports = {
-  // ...
-  payBill: payBillLogic,
-  // ...
-};
 
 // Lógico de listagem de faturas a pagar
 async function getBillsTo(userId, page = 1) {
@@ -595,7 +689,7 @@ async function getBillsTo(userId, page = 1) {
     id:      r.id,
     from_id: r.from_id,
     to_id:   r.to_id,
-    amount:  r.amount,
+    amount:  fromSats(r.amount || 0),
     date:    r.date
   }));
 }
@@ -604,24 +698,26 @@ async function getBillsFrom(userId, page = 1) {
   const limit  = 10;
   const offset = (page - 1) * limit;
   
-  const rows = db.prepare(`
-    SELECT
-      bill_id AS id,
-      from_id,
-      to_id,
-      amount,
-      date
-    FROM bills
-    WHERE from_id = ?
-    ORDER BY date DESC
-    LIMIT ? OFFSET ?
-  `).all(userId, limit, offset);
+  const rows = db
+    .prepare(`
+      SELECT
+        bill_id AS id,
+        from_id,
+        to_id,
+        amount,
+        date
+      FROM bills
+      WHERE from_id = ?
+      ORDER BY date DESC
+      LIMIT ? OFFSET ?
+    `)
+    .all(userId, limit, offset);
 
   return rows.map(r => ({
     id:      r.id,
     from_id: r.from_id,
     to_id:   r.to_id,
-    amount:  r.amount,
+    amount:  fromSats(r.amount || 0),
     date:    r.date
   }));
 }
@@ -650,7 +746,7 @@ setInterval(() => {
 
   // limpa IP-blocks type=2 antigos
   cleanOldIps();
-}, 24 * 60 * 60 * 1000);
+}, 300 * 1000);
 
 module.exports = {
   authenticate,
@@ -671,6 +767,7 @@ module.exports = {
   restoreBackup,
   updateUser: updateUserInfo,
   getCooldown,
+  listRank,
   createBill: createBillLogic,
   payBill:    payBillLogic,
 };

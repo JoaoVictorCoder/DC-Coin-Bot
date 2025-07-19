@@ -8,11 +8,29 @@ const db = new Database(path.join(__dirname, 'playerList', 'database.db'));
 // 1) PRAGMAs
 db.pragma('journal_mode = WAL');
 
+const SATS_PER_COIN = 100_000_000;
+
+/**
+ * Converte um valor “coin” (string ou número, e.g. 0.12345678) em satoshis (INTEGER)
+ */
+function toSats(amount) {
+  // parseFloat(…) para aceitar string ou número, Math.round para garantir inteiro
+  return Math.round(parseFloat(amount) * SATS_PER_COIN);
+}
+
+/**
+ * Converte satoshis (INTEGER) para string “coin” com 8 casas decimais
+ */
+function fromSats(sats) {
+  return (sats / SATS_PER_COIN).toFixed(8);
+}
+
+
 // 2) Criação inicial de tabelas
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id       TEXT PRIMARY KEY,
-    coins    REAL    DEFAULT 0,
+    coins    INTEGER    DEFAULT 0,
     cooldown INTEGER DEFAULT 0,
     notified INTEGER DEFAULT 0
   );
@@ -29,7 +47,7 @@ db.exec(`
     date    TEXT    NOT NULL,
     from_id TEXT    NOT NULL,
     to_id   TEXT    NOT NULL,
-    amount  REAL    NOT NULL
+    amount  INTEGER    NOT NULL
   );
   CREATE TABLE IF NOT EXISTS dm_queue (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,14 +58,47 @@ db.exec(`
   );
 `);
 
+
+  const ipCols = db
+    .prepare(`PRAGMA table_info('ips')`)
+    .all()
+    .map(c => c.name);
+
+  if (ipCols.length > 0) {
+    // tabela existe, só adiciona a coluna se faltar
+    if (!ipCols.includes('try')) {
+      db.exec(`
+        ALTER TABLE ips
+        ADD COLUMN try INTEGER NOT NULL DEFAULT 0;
+      `);
+      console.log("⚙️  Migration: added 'try' in ips");
+    }
+  } else {
+    // tabela não existe, cria do zero já com 'try'
+    db.exec(`
+      CREATE TABLE ips (
+        ip_address TEXT    PRIMARY KEY,
+        type       INTEGER NOT NULL,
+        time       INTEGER NOT NULL,
+        try        INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    console.log("⚙️  Tabble created: 'ips'");
+  }
+
+  // 2) Garante os índices
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ips_type ON ips(type);
+    CREATE INDEX IF NOT EXISTS idx_ips_time ON ips(time);
+    CREATE INDEX IF NOT EXISTS idx_ips_try  ON ips(try);
+  `);
+;
+
+// 3) Garante os índices (novos ou existentes)
 db.exec(`
-  CREATE TABLE IF NOT EXISTS ips (
-    ip_address TEXT    PRIMARY KEY,
-    type       INTEGER NOT NULL,
-    time       INTEGER NOT NULL
-  );
   CREATE INDEX IF NOT EXISTS idx_ips_type ON ips(type);
   CREATE INDEX IF NOT EXISTS idx_ips_time ON ips(time);
+  CREATE INDEX IF NOT EXISTS idx_ips_try  ON ips(try);
 `);
 
 // — IPS CRUD — adicione estas funções em database.js, após a criação da tabela ips
@@ -162,7 +213,7 @@ db.exec(`
     bill_id TEXT    PRIMARY KEY,
     from_id TEXT,
     to_id   TEXT    NOT NULL,
-    amount  TEXT    NOT NULL,
+    amount  INTEGER   NOT NULL,
     date    INTEGER NOT NULL,
     FOREIGN KEY(from_id) REFERENCES users(id),
     FOREIGN KEY(to_id)   REFERENCES users(id)
@@ -203,7 +254,7 @@ db.exec(`
     bill_id TEXT PRIMARY KEY,
     from_id TEXT NOT NULL,
     to_id   TEXT NOT NULL,
-    amount  TEXT NOT NULL,
+    amount  INTEGER NOT NULL,
     date    INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_bills_from ON bills(from_id);
@@ -220,18 +271,22 @@ function getUser(id) {
     db.prepare('INSERT INTO users (id) VALUES (?)').run(id);
     user = stmt.get(id);
   }
-  return user;
+  return {
+    ...user,
+    // extensão útil para lógica/commands:
+    balance: {
+      sats:    user.coins,
+      coins:   fromSats(user.coins)
+    }
+  };
 }
-function setCoins(id, amount) {
-  getUser(id);
-  db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(amount, id);
+function setCoins(id, sats) {
+  // no toSats here
+  db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(sats, id);
 }
-function addCoins(id, amount) {
-  getUser(id);
-  // Arredonda o saldo a 8 casas decimais para evitar erros de ponto-flutuante
-  db.prepare(
-    'UPDATE users SET coins = ROUND(coins + ?, 8) WHERE id = ?'
-  ).run(amount, id);
+function addCoins(id, sats) {
+  // no toSats here
+  db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(sats, id);
 }
 function setCooldown(id, ts) {
   getUser(id);
@@ -291,21 +346,34 @@ function getCardOwnerByHash(hash) {
 }
 
 // — TRANSACTIONS —
-function createTransaction(fromId, toId, amount) {
+function createTransaction(fromId, toId, coinAmount) {
+  const amountSats = toSats(coinAmount);
   const txId = uuidv4();
   const date = new Date().toISOString();
   db.prepare(`
     INSERT INTO transactions (id, date, from_id, to_id, amount)
     VALUES (?, ?, ?, ?, ?)
-  `).run(txId, date, fromId, toId, amount);
+  `).run(txId, date, fromId, toId, amountSats);
   return { txId, date };
 }
 
 // 2) recupera uma transação existente pelo ID
 function getTransaction(txId) {
-  return db
-    .prepare('SELECT id, date, from_id, to_id, amount FROM transactions WHERE id = ?')
-    .get(txId);
+  const stmt = db.prepare(`
+    SELECT id, date, from_id AS fromId, to_id AS toId, amount
+    FROM transactions
+    WHERE id = ?
+  `);
+  const tx = stmt.get(txId);
+  if (!tx) return null;
+
+  return {
+    id:     tx.id,
+    date:   tx.date,
+    fromId: tx.fromId,
+    toId:   tx.toId,          // valor bruto em satoshis
+    coins:  fromSats(tx.amount)  // valor formatado em coins (8 casas)
+  };
 }
 
 // 3) helper que gera um ID único (não conflita) e registra
@@ -490,7 +558,7 @@ function dbGetCooldown(id) {
 
 module.exports = {
   createSession, getSession, upsertIp, cleanOldIps,
-  deleteOldSessions, db, deleteIp, getIp,
+  deleteOldSessions, db, deleteIp, getIp, toSats, fromSats,
   // users
   getUser, setCoins, addCoins,
   getCooldown, setCooldown, deleteBackupByCode,

@@ -20,7 +20,7 @@ const logic = require('./logic');
 const database = require('./database.js');
 const {
   getUser, setCoins, addCoins, db, getBill, deleteBill, createUser,
-  setCooldown, getCooldown, setNotified, wasNotified,
+  setCooldown, getCooldown, setNotified, wasNotified, toSats, fromSats,
   getAllUsers, getServerApiChannel, getCardOwner, genUniqueBillId,
   getCardOwnerByHash, createTransaction, getTransaction,
   genUniqueTxId, enqueueDM, getNextDM, deleteDM, createBill
@@ -47,12 +47,15 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
+
 const { setupCommands } = require('./commands');
 
 setupCommands(client, TOKEN, CLIENT_ID);
 
 const setupBillProcessor = require('./billprocessor');
 const setupPaybillProcessor = require('./paybillprocessor');
+const dmQueue = require('./dmQueue');
+dmQueue.init(client);
 
 setupBillProcessor(client);
 setupPaybillProcessor(client);
@@ -240,10 +243,14 @@ client.on('messageCreate', async (message) => {
 
 if (cmd === '!bal') {
   try {
-    // importa só aqui, no handler
-    const { getUser } = require('./database');
+    // importa helpers no handler
+    const { getUser, fromSats } = require('./database');
     const user = getUser(message.author.id);
-    return await message.reply(`> 💰 Saldo: ${user.coins.toFixed(8)} coins.`);
+
+    // formata coins (INTEGER satoshis → string "66.00000000")
+    const balance = fromSats(user.coins);
+
+    return await message.reply(`> 💰 Saldo: ${balance} coins.`);
   } catch (err) {
     console.error('❌ Error in !bal handler:', err);
     // fallback silencioso
@@ -259,6 +266,9 @@ if (cmd === '!bal') {
 
 if (cmd === '!view') {
   try {
+    // importa helper de formatação
+    const { fromSats } = require('./database');
+
     // 1) Tenta obter o usuário por menção ou ID
     let target = message.mentions.users.first();
     if (!target && args[0]) {
@@ -286,13 +296,13 @@ if (cmd === '!view') {
     const embed = new EmbedBuilder()
       .setColor('Green')
       .setTitle(`💼 Saldo de ${target.tag}`)
-      .setDescription(`💰 **${record.coins.toFixed(8)} coins**`);
+      .setDescription(`💰 **${fromSats(record.coins)} coins**`);
 
     await message.reply({ embeds: [embed] });
 
   } catch (err) {
     console.error('❌ Unexpected error in !view command:', err);
-    // Opcional: não notificar o usuário, pois já houve tentativa de resposta
+    // já tentou responder, não faz mais nada
   }
 }
 
@@ -307,6 +317,8 @@ if (cmd === '!active' && args.length >= 3) {
   const guild      = message.guild;
   const apiChannel = message.channel;
   const botMember  = guild?.members.cache.get(client.user.id);
+  const { toSats, getUser, createUser } = require('./database');
+  const { getCardOwnerByHash } = require('./logic');
 
   // 0) Checa permissão de envio
   if (guild && !apiChannel.permissionsFor(botMember).has('SendMessages')) {
@@ -327,10 +339,20 @@ if (cmd === '!active' && args.length >= 3) {
     return;
   }
 
-  // 2) valida valor e TRUNCATE para 8 casas
-  let amount = parseFloat(valorStr);
-  amount = Math.floor(amount * 1e8) / 1e8;
-  if (isNaN(amount) || amount <= 0) {
+  // 2) valida valor (até 8 casas) e converte para satoshis
+  if (!/^\d+(\.\d{1,8})?$/.test(valorStr)) {
+    try {
+      await apiChannel.send({
+        content: `000000000000:false`,
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.error('⚠️ Error sending failure response:', err);
+    }
+    return;
+  }
+  const amountSats = toSats(valorStr);
+  if (amountSats <= 0) {
     try {
       await apiChannel.send({
         content: `000000000000:false`,
@@ -365,7 +387,7 @@ if (cmd === '!active' && args.length >= 3) {
 
   const owner = getUser(ownerId);
   // saldo insuficiente?
-  if (owner.coins < amount) {
+  if (owner.coins < amountSats) {
     try {
       await apiChannel.send({
         content: `${ownerId}:false`,
@@ -377,45 +399,35 @@ if (cmd === '!active' && args.length >= 3) {
     return;
   }
 
-  // 5) faz a transferência, TRUNCANDO também os novos saldos
-  const newOwnerBalance = Math.floor((owner.coins - amount) * 1e8) / 1e8;
+  // 5) faz a transferência em satoshis
   try {
-    setCoins(ownerId, newOwnerBalance);
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
+      .run(amountSats, ownerId);
+    db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+      .run(amountSats, targetId);
   } catch (err) {
-    console.error('⚠️ Error updating owner balance:', err);
-    // fallback: abort
+    console.error('⚠️ Error updating balances:', err);
     return;
   }
 
-  let target = getUser(targetId);
-  const currentTargetCoins = target ? target.coins : 0;
-  const newTargetBalance = Math.floor((currentTargetCoins + amount) * 1e8) / 1e8;
-  try {
-    addCoins(targetId, amount); // assuming addCoins simply adds, but balance will still reflect truncated values
-    setCoins(targetId, newTargetBalance);
-  } catch (err) {
-    console.error('⚠️ Error updating target balance:', err);
-    // attempt rollback omitted
-  }
-
-  // 6) registra a transação para owner e receiver, com amount truncado
-  const date = new Date().toISOString();
-  const txIdOwner    = genUniqueTxId();
-  const txIdReceiver = genUniqueTxId();
+  // 6) registra a transação para owner e receiver
+  const date           = new Date().toISOString();
+  const txIdOwner      = genUniqueTxId();
+  const txIdReceiver   = genUniqueTxId();
   try {
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(txIdOwner, date, ownerId, targetId, amount);
+    `).run(txIdOwner, date, ownerId, targetId, amountSats);
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(txIdReceiver, date, ownerId, targetId, amount);
+    `).run(txIdReceiver, date, ownerId, targetId, amountSats);
   } catch (err) {
     console.error('⚠️ Error logging transactions:', err);
   }
 
-  // 7) responde com sucesso referenciando a mensagem anterior
+  // 7) responde com sucesso
   try {
     await apiChannel.send({
       content: `${ownerId}:true`,
@@ -427,10 +439,12 @@ if (cmd === '!active' && args.length >= 3) {
 }
 
 
+
 // --- Handler para !bill ---
 if (cmd === '!bill' && args.length >= 3) {
   const [ fromId, toId, amountStr, timeStr ] = args;
   const apiChannel = message.channel;
+  const { toSats } = require('./database');
 
   // 1) Validação dos IDs
   if (!/^\d{17,}$/.test(fromId) || !/^\d{17,}$/.test(toId)) {
@@ -445,12 +459,12 @@ if (cmd === '!bill' && args.length >= 3) {
     return;
   }
 
-  // 2) Validação do amount
+  // 2) Validação do amount (até 8 casas decimais)
   const amount = amountStr.trim();
-  if (!/^\d+(\.\d+)?$/.test(amount)) {
+  if (!/^\d+(\.\d{1,8})?$/.test(amount)) {
     try {
       await apiChannel.send({
-        content: '❌ Formato de valor inválido.',
+        content: '❌ Formato de valor inválido. Até 8 casas decimais.',
         reply: { messageReference: message.id }
       });
     } catch (err) {
@@ -458,6 +472,7 @@ if (cmd === '!bill' && args.length >= 3) {
     }
     return;
   }
+  const satAmount = toSats(amount);
 
   // 3) Cálculo do timestamp
   const now = Date.now();
@@ -481,30 +496,27 @@ if (cmd === '!bill' && args.length >= 3) {
     switch (unit) {
       case 'd': delta = val * MS_IN_DAY;    break;
       case 'h': delta = val * MS_IN_HOUR;   break;
-      case 'm': delta = val * 60 * 1000;    break;
-      case 's': delta = val * 1000;         break;
+      case 'm': delta = val *   MS_IN_MIN;  break;
+      case 's': delta = val *   MS_IN_SEC;  break;
     }
-    // garante limites de 1h a 6 meses em relação aos 90 dias
-    if (delta < MS_IN_HOUR)    delta = MS_IN_HOUR;
-    if (delta > SIX_MONTHS)    delta = SIX_MONTHS;
-    // se delta ≤ 90d: volta no tempo; senão: adianta além dos 90d
+    if (delta < MS_IN_HOUR) delta = MS_IN_HOUR;
+    if (delta > SIX_MONTHS) delta = SIX_MONTHS;
     timestamp = (delta <= NINETY_DAYS)
       ? now - (NINETY_DAYS - delta)
       : now + (delta - NINETY_DAYS);
   }
 
-  // 4) Criação da bill em DB
+  // 4) Criação da bill em DB (amount agora em satoshis)
   let billId;
   try {
-    billId = createBill(fromId, toId, amount, timestamp);
+    billId = createBill(fromId, toId, satAmount, timestamp);
   } catch (err) {
     console.warn('⚠️ Bill creation failure:', err);
     return;
   }
 
-  // 5) Respostas referenciando a mensagem original
+  // 5) Resposta de confirmação
   try {
-    // Resposta no formato userID_from:billID
     await apiChannel.send({
       content: `${fromId}:${billId}`,
       reply: { messageReference: message.id }
@@ -514,6 +526,7 @@ if (cmd === '!bill' && args.length >= 3) {
   }
 }
 
+
 // … dentro do seu client.on('messageCreate', async message => { … } )…
 
 // dentro do seu handler de mensagem
@@ -521,6 +534,8 @@ if (cmd === '!paybill' && args.length >= 1) {
   const billId     = args[0];
   const apiChannel = message.channel;
   const executorId = message.author.id;
+  const { getUser } = require('./database');
+  const { toSats, fromSats } = require('./database');
 
   // helper para responder sem crashar
   const reply = async ok => {
@@ -543,12 +558,13 @@ if (cmd === '!paybill' && args.length >= 1) {
   }
   if (!bill) return reply(false);
 
-  // 2) extrai e trunca o valor para 8 casas decimais
-  let amount = parseFloat(bill.amount);
-  amount = Math.floor(amount * 1e8) / 1e8;
-  if (isNaN(amount) || amount <= 0) return reply(false);
+  // 2) obtém amount em satoshis (INTEGER)
+  const amountSats = Number(bill.amount);
+  if (!Number.isInteger(amountSats) || amountSats <= 0) {
+    return reply(false);
+  }
 
-  // 3) confere saldo do pagador
+  // 3) confere saldo do pagador (user.coins é satoshis)
   let payer;
   try {
     payer = getUser(executorId);
@@ -556,17 +572,17 @@ if (cmd === '!paybill' && args.length >= 1) {
     console.warn('⚠️ Erro ao buscar executor:', err);
     return reply(false);
   }
-  if (!payer || payer.coins < amount) {
+  if (!payer || payer.coins < amountSats) {
     return reply(false);
   }
 
-  // 4) registra a transação (sempre) usando o valor truncado
+  // 4) registra a transação
   const paidAt = new Date().toISOString();
   try {
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
       VALUES (?,?,?,?,?)
-    `).run(billId, paidAt, executorId, bill.to_id, amount);
+    `).run(billId, paidAt, executorId, bill.to_id, amountSats);
   } catch (err) {
     console.warn('⚠️ Erro ao registrar transação:', err);
   }
@@ -580,19 +596,11 @@ if (cmd === '!paybill' && args.length >= 1) {
 
   // 6) atualiza saldos se não for self-pay
   if (executorId !== bill.to_id) {
-    let payee;
     try {
-      payee = getUser(bill.to_id) || (() => { createUser(bill.to_id); return getUser(bill.to_id); })();
-    } catch (err) {
-      console.warn('⚠️ Erro ao garantir payee:', err);
-      return reply(false);
-    }
-
-    const newPayerBalance = Math.floor((payer.coins - amount) * 1e8) / 1e8;
-    const newPayeeBalance = Math.floor((payee.coins + amount) * 1e8) / 1e8;
-    try {
-      setCoins(executorId, newPayerBalance);
-      setCoins(bill.to_id, newPayeeBalance);
+      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
+        .run(amountSats, executorId);
+      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+        .run(amountSats, bill.to_id);
     } catch (err) {
       console.warn('⚠️ Erro ao atualizar saldos:', err);
       return reply(false);
@@ -603,7 +611,7 @@ if (cmd === '!paybill' && args.length >= 1) {
       type: 'rich',
       title: '🏦 Bill Paid 🏦',
       description: [
-        `**${amount.toFixed(8)}** coins`,
+        `**${fromSats(amountSats)}** coins`,
         `From: \`${executorId}\``,
         `Bill ID: \`${billId}\``,
         '*Received ✅*'
@@ -615,9 +623,11 @@ if (cmd === '!paybill' && args.length >= 1) {
       console.warn('⚠️ Erro ao enfileirar DM:', err);
     }
   }
+
   // 8) confirma no canal
   return reply(true);
 }
+
 
 
 if (cmd === '!help') {
@@ -804,12 +814,13 @@ if (cmd === '!api') {
 
 if (cmd === '!pay') {
   try {
-    // 1) parse & validate target & amount
-    let targetId;
-    let targetTag;
+    const { toSats, fromSats, getUser, createUser } = require('./database');
+
+    // 1) parse & validate target
+    let targetId, targetTag;
     const mention = message.mentions.users.first();
     if (mention) {
-      targetId = mention.id;
+      targetId  = mention.id;
       targetTag = mention.tag;
     } else if (args[0]) {
       targetId = args[0];
@@ -817,7 +828,7 @@ if (cmd === '!pay') {
         const fetched = await client.users.fetch(targetId);
         targetTag = fetched.tag;
       } catch {
-        // fallback: allow if ID exists in our DB even if not a Discord user
+        // fallback: exist in DB?
         const dbUser = getUser(targetId);
         if (dbUser) {
           targetTag = `User(${targetId})`;
@@ -829,56 +840,59 @@ if (cmd === '!pay') {
       return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
     }
 
-    // parse & TRUNCATE to max 8 decimal places
-    let amount = parseFloat(args[1]);
-    amount = Math.floor(amount * 1e8) / 1e8;
-    if (isNaN(amount) || amount <= 0 || targetId === message.author.id) {
+    // 2) parse & validate amount, convert to satoshis
+    const amountStr = args[1]?.trim();
+    if (!amountStr || !/^\d+(\.\d{1,8})?$/.test(amountStr) || targetId === message.author.id) {
+      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+    }
+    const amountSats = toSats(amountStr);
+    if (amountSats <= 0) {
       return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
     }
 
-    // 2) fetch sender and receiver from DB
-    let sender, receiver;
+    // 3) fetch sender and receiver
+    let sender = getUser(message.author.id);
+    let receiver;
     try {
-      sender   = getUser(message.author.id);
       receiver = getUser(targetId);
-    } catch (err) {
-      console.error('⚠️ Error fetching user records in !pay:', err);
-      return await message.reply('❌ Não consegui acessar dados do usuário. Tente mais tarde.');
+    } catch {
+      createUser(targetId);
+      receiver = getUser(targetId);
     }
-    if (sender.coins < amount) {
+
+    if (sender.coins < amountSats) {
       return await message.reply('💸 Saldo insuficiente.');
     }
 
-    // 3) update balances
-    const newSenderBalance   = Math.floor((sender.coins   - amount) * 1e8) / 1e8;
-    const newReceiverBalance = Math.floor((receiver.coins + amount) * 1e8) / 1e8;
+    // 4) update balances (integer satoshis)
     try {
-      setCoins(message.author.id, newSenderBalance);
-      setCoins(targetId,          newReceiverBalance);
+      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
+        .run(amountSats, message.author.id);
+      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+        .run(amountSats, targetId);
     } catch (err) {
       console.error('⚠️ Error updating balances in !pay:', err);
       return await message.reply('❌ Não foi possível completar a transação. Tente mais tarde.');
     }
 
-    // 4) log transactions
-    const date = new Date().toISOString();
+    // 5) log transactions
+    const date        = new Date().toISOString();
     const txIdSender   = genUniqueTxId();
     const txIdReceiver = genUniqueTxId();
     try {
       const stmt = db.prepare(`
         INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?,?,?,?,?)
+        VALUES (?, ?, ?, ?, ?)
       `);
-      stmt.run(txIdSender, date, message.author.id, targetId,   amount);
-      stmt.run(txIdReceiver, date, message.author.id, targetId, amount);
+      stmt.run(txIdSender, date, message.author.id, targetId, amountSats);
+      stmt.run(txIdReceiver, date, message.author.id, targetId, amountSats);
     } catch (err) {
       console.error('⚠️ Error logging transactions in !pay:', err);
     }
 
-    // 5) prepare and send confirmation
-    const replyText = `✅ Sent **${amount.toFixed(8)} coins** to **${targetTag}**.`;
-    await message.reply(replyText);
-
+    // 6) confirmation
+    const sentCoins = fromSats(amountSats);
+    return await message.reply(`✅ Sent **${sentCoins} coins** to **${targetTag}**.`);
   } catch (err) {
     console.error('❌ Unexpected error in !pay command:', err);
     try {
@@ -890,52 +904,62 @@ if (cmd === '!pay') {
 
 
 
-  if (cmd === '!check') {
-    const txId = args[0];
-    if (!txId) {
-      return message.reply('❌ Use: !check <transaction_ID>');
-    }
-  
-    // busca no banco
-    const tx = getTransaction(txId);
-    if (!tx) {
-      return message.reply('❌ Unknown transaction.');
-    }
-  
-    // recria arquivo de comprovante
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-    const filePath = path.join(tempDir, `${txId}.txt`);
-    const content = [
-      `Transaction ID: ${txId}`,
-      `Date         : ${tx.date}`,
-      `From         : ${tx.from_id}`,
-      `To           : ${tx.to_id}`,
-      `Amount       : ${tx.amount.toFixed(8)} coins`
-    ].join(os.EOL);
-    fs.writeFileSync(filePath, content);
-  
-    // monta texto de resposta
-    const replyText = `✅ Transaction: (${tx.date}) from \`${tx.from_id}\` to \`${tx.to_id}\` of \`${tx.amount.toFixed(8)}\` coins.`;
-  
-    // tenta enviar com anexo
-    try {
-      const attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
-      await message.reply({ content: replyText, files: [attachment] });
-    } catch (err) {
-      if (err.code === 50013) {
-        // falta permissão de anexar
-        console.warn('⚠️ No permission to send the verification ID:', err);
-        await message.reply(`${replyText}\n❌ No permission to send the ID.`);
-      } else {
-        console.error('Unexpected eror while sending confirmation txt:', err);
-        await message.reply(`${replyText}\n❌ ID sending failure.`);
-      }
-    } finally {
-      // limpa arquivo temporário
-      try { fs.unlinkSync(filePath); } catch {}
-    }
+
+if (cmd === '!check') {
+  const { getTransaction, fromSats } = require('./database');
+  const path = require('path');
+  const fs = require('fs');
+  const os = require('os');
+  const { AttachmentBuilder } = require('discord.js');
+
+  const txId = args[0];
+  if (!txId) {
+    return message.reply('❌ Use: !check <transaction_ID>');
   }
+
+  // busca no banco
+  const tx = getTransaction(txId);
+  if (!tx) {
+    return message.reply('❌ Unknown transaction.');
+  }
+
+  // prepara diretório temporário
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+  // cria arquivo de comprovante
+  const filePath = path.join(tempDir, `${txId}.txt`);
+  const content = [
+    `Transaction ID: ${tx.id}`,
+    `Date         : ${tx.date}`,
+    `From         : ${tx.fromId}`,
+    `To           : ${tx.toId}`,
+    `Amount       : ${fromSats(tx.sats)} coins`
+  ].join(os.EOL);
+  fs.writeFileSync(filePath, content, 'utf8');
+
+  // monta texto de resposta
+  const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${fromSats(tx.sats)}\` coins.`;
+
+  // tenta enviar com anexo
+  try {
+    const attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
+    await message.reply({ content: replyText, files: [attachment] });
+  } catch (err) {
+    if (err.code === 50013) {
+      console.warn('⚠️ No permission to send the verification ID:', err);
+      await message.reply(`${replyText}\n❌ No permission to send the ID.`);
+    } else {
+      console.error('Unexpected error while sending confirmation txt:', err);
+      await message.reply(`${replyText}\n❌ ID sending failure.`);
+    }
+  } finally {
+    // limpa arquivo temporário
+    try { fs.unlinkSync(filePath); } catch {}
+  }
+}
+
+
 
   // dentro do seu handler de messageCreate, adicione:
 if (cmd === '!backup') {
@@ -1006,9 +1030,11 @@ if (cmd === '!backup') {
 
 // dentro do seu handler de messageCreate, adicione:
 if (cmd === '!restore' && args.length >= 1) {
-  const code = args[0].trim();
+  const code  = args[0].trim();
+  const { getUser } = require('./database');
+  const { fromSats } = require('./database');
 
-  // 1) busca backup
+  // 1) Busca backup
   let row;
   try {
     row = db.prepare('SELECT userId FROM backups WHERE code = ?').get(code);
@@ -1023,7 +1049,7 @@ if (cmd === '!restore' && args.length >= 1) {
   const oldId = row.userId;
   const newId = message.author.id;
 
-  // 2) mesmo usuário?
+  // 2) Mesma conta?
   if (oldId === newId) {
     try {
       db.prepare('DELETE FROM backups WHERE code = ?').run(code);
@@ -1031,11 +1057,11 @@ if (cmd === '!restore' && args.length >= 1) {
       console.error('⚠️ Failed to delete self‐restore backup:', err);
     }
     return message.reply(
-      '❌ You are trying to restore the same wallet in the same account.\nUse `/backup` again.'
+      '❌ You cannot restore backup to the same account.\nUse `/backup` again if you need a fresh code.'
     );
   }
 
-  // 3) pega saldo da conta antiga
+  // 3) Pega saldo antigo (em satoshis)
   let origin;
   try {
     origin = getUser(oldId);
@@ -1043,65 +1069,68 @@ if (cmd === '!restore' && args.length >= 1) {
     console.error('⚠️ Restore failed at getUser(oldId):', err);
     return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
   }
-  const oldBal = origin.coins;
+  const oldBalSats = origin.coins;  // já é INTEGER
 
-  // 4) carteira vazia?
-  if (oldBal <= 0) {
+  // 4) Carteira vazia?
+  if (oldBalSats <= 0) {
     try {
       db.prepare('DELETE FROM backups WHERE code = ?').run(code);
     } catch (err) {
       console.error('⚠️ Failed to delete empty backup:', err);
     }
-    return message.reply('❌ Empty Wallet.');
+    return message.reply('❌ Empty wallet—nothing to restore.');
   }
 
-  // 5) truncar para 8 casas decimais
-  const truncatedBal = Math.floor(oldBal * 1e8) / 1e8;
-
-  // 6) transfere saldo
+  // 5) Transfere saldo
   try {
-    addCoins(newId, truncatedBal);
-    setCoins(oldId, 0);
+    // adiciona ao novo usuário
+    db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+      .run(oldBalSats, newId);
+    // zera a carteira antiga
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
+      .run(oldBalSats, oldId);
   } catch (err) {
     console.error('⚠️ Restore failed at balance transfer:', err);
     return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
   }
 
-  // 7) registra transações com IDs únicos
+  // 6) Registra transação(s)
   const date = new Date().toISOString();
   try {
-    const txIdOwner = genUniqueTxId();
+    const txId1 = genUniqueTxId();
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?,?,?,?,?)
-    `).run(txIdOwner, date, oldId, newId, truncatedBal);
+      VALUES (?, ?, ?, ?, ?)
+    `).run(txId1, date, oldId, newId, oldBalSats);
 
-    const txIdReceiver = genUniqueTxId();
+    const txId2 = genUniqueTxId();
     db.prepare(`
       INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?,?,?,?,?)
-    `).run(txIdReceiver, date, oldId, newId, truncatedBal);
+      VALUES (?, ?, ?, ?, ?)
+    `).run(txId2, date, oldId, newId, oldBalSats);
   } catch (err) {
     console.error('⚠️ Failed to log restore transactions:', err);
-    // não aborta a restauração, apenas loga
+    // não aborta: o saldo já foi movido
   }
 
-  // 8) deleta o código de backup (uso único)
+  // 7) Remove o código de backup
   try {
     db.prepare('DELETE FROM backups WHERE code = ?').run(code);
   } catch (err) {
     console.error('⚠️ Failed to delete used backup code:', err);
   }
 
-  // 9) confirma no canal
+  // 8) Confirmação final
   return message.reply(
-    `🎉 Backup Restored Successfully! **${truncatedBal.toFixed(8)} coins** were transferred to your wallet.`
+    `🎉 Backup restored: **${fromSats(oldBalSats)}** coins transferred to your wallet!`
   );
 }
+
 
   // no seu index.js ou commands.js, onde você trata comandos de texto:
 if (cmd === '!history') {
   try {
+    const { getUser, fromSats } = require('./database');
     const guild     = message.guild;
     const channel   = message.channel;
     const botMember = guild?.members.cache.get(client.user.id);
@@ -1190,7 +1219,7 @@ if (cmd === '!history') {
     if (page > maxPage) header.push(`⚠️📖 Showing latest page: ${maxPage}`);
     header.push(`🔄 User: ${name} (${requestedId})`);
     header.push(`⏱️ Transactions: ${totalCount}`);
-    header.push(`💸 Balance: ${userRow.coins.toFixed(8)} coins`);
+    header.push(`💸 Balance: ${fromSats(userRow.coins)} coins`);
     header.push(`📖 Page: ${page}`);
 
     if (totalCount === 0) {
@@ -1214,7 +1243,7 @@ if (cmd === '!history') {
     // monta conteúdo TXT
     const blocks = transactions.map(tx => [
       `UUID:   ${tx.id}`,
-      `AMOUNT: ${tx.amount.toFixed(8)} coins`,
+      `AMOUNT: ${fromSats(tx.amount)} coins`,
       `FROM:   ${tx.from_id}`,
       `TO:     ${tx.to_id}`,
       `DATE:   ${tx.date}`
@@ -1256,17 +1285,15 @@ if (cmd === '!history') {
   }
 }
 
+
 if (cmd === '!verify') {
-  const id = args[0];
+  const id      = args[0];
   const channel = message.channel;
 
-  // helper para enviar sem crashar
+  // helper para responder sem travar
   const safeReply = async content => {
     try {
-      await channel.send({
-        content,
-        reply: { messageReference: message.id }
-      });
+      await message.reply({ content, messageReference: message.id });
     } catch (err) {
       console.error('⚠️ !verify reply failed:', err);
     }
@@ -1283,7 +1310,6 @@ if (cmd === '!verify') {
     isBill = !!getBill(id);
   } catch (err) {
     console.error('⚠️ Error checking bills in !verify:', err);
-    isBill = false;
   }
   if (isBill) {
     return safeReply(`${id}:false`);
@@ -1292,11 +1318,12 @@ if (cmd === '!verify') {
   // 3) busca na tabela transactions
   let found = false;
   try {
-    const row = db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id);
+    const row = db
+      .prepare('SELECT 1 FROM transactions WHERE id = ?')
+      .get(id);
     found = !!row;
   } catch (err) {
     console.error('⚠️ Error querying transactions in !verify:', err);
-    found = false;
   }
 
   // 4) responde true ou false
@@ -1304,21 +1331,22 @@ if (cmd === '!verify') {
 }
 
 if (cmd === '!bills') {
+  const { fromSats } = require('./database');
   const channel   = message.channel;
   const guild     = message.guild;
   const userId    = message.author.id;
   const botMember = guild?.members.cache.get(client.user.id);
 
-  // 1) Verifica permissões de envio e anexar
+  // 1) Verifica permissão de envio e anexar
   const canSend   = !guild || channel.permissionsFor(botMember).has('SendMessages');
   const canAttach = !guild || channel.permissionsFor(botMember).has('AttachFiles');
-  if (!canSend) return; // sem permissão para sequer enviar mensagem
+  if (!canSend) return;
 
   // 2) Busca todas as bills “de” e “para” o usuário
   let bills;
   try {
-    const toPay     = await logic.getBillsTo(userId, 1);   // faturas que você deve pagar :contentReference[oaicite:0]{index=0}
-    const toReceive = await logic.getBillsFrom(userId, 1); // faturas que você vai receber :contentReference[oaicite:1]{index=1}
+    const toPay     = await logic.getBillsTo(userId, 1);
+    const toReceive = await logic.getBillsFrom(userId, 1);
     bills = [...toPay, ...toReceive];
   } catch (err) {
     console.error('⚠️ Bills listing failure:', err);
@@ -1330,8 +1358,8 @@ if (cmd === '!bills') {
   }
 
   // 3) Formata o conteúdo do arquivo
-  const os = require('os');
-  const fs = require('fs');
+  const os   = require('os');
+  const fs   = require('fs');
   const path = require('path');
   const { AttachmentBuilder } = require('discord.js');
 
@@ -1343,7 +1371,7 @@ if (cmd === '!bills') {
       `BILL ID : ${b.id}`,
       `FROM    : ${b.from_id}`,
       `TO      : ${b.to_id}`,
-      `AMOUNT  : ${b.amount}`,
+      `AMOUNT  : ${fromSats(b.amount)} coins`,
       `DATE    : ${new Date(b.date).toLocaleString()}`
     ].join(os.EOL)
   );
@@ -1358,10 +1386,11 @@ if (cmd === '!bills') {
     console.error('⚠️ Bills file creating failure:', err);
   }
 
-  // 4) Envia a mensagem, anexando o TXT se possível
+  // 4) Envia a mensagem com anexo se possível
   try {
-    const payload = { content: `📋 **Your bills (${bills.length}):**\n` +
-      bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
+    const payload = {
+      content: `📋 **Your bills (${bills.length}):**\n` +
+        bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
     };
     if (canAttach && fs.existsSync(filePath)) {
       payload.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
@@ -1369,19 +1398,19 @@ if (cmd === '!bills') {
     await channel.send(payload);
   } catch (err) {
     console.warn('⚠️ Bills file attach failure:', err);
-    // fallback: apenas lista IDs no chat
     await channel.send(
-      `📋 **Suas bills (${bills.length}):**\n` +
+      `📋 **Your bills (${bills.length}):**\n` +
       bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
     );
   } finally {
-    // 5) Limpa arquivo temporário
     try { fs.unlinkSync(filePath); } catch {}
   }
 }
 
+
 if (cmd === '!global') {
   const channel = message.channel;
+  const { fromSats } = require('./database');
 
   // 1) Deduplicate all transactions globally
   try {
@@ -1405,7 +1434,7 @@ if (cmd === '!global') {
   let yourBalance  = 0;
   let totalBills   = 0;
   try {
-    totalCoins   = db.prepare('SELECT SUM(coins) AS sum FROM users').get().sum || 0;
+    totalCoins   = db.prepare('SELECT COALESCE(SUM(coins),0) AS sum FROM users').get().sum;
     totalTx      = db.prepare('SELECT COUNT(*) AS cnt FROM transactions').get().cnt;
     totalClaims  = db.prepare("SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = '000000000000'").get().cnt;
     totalUsers   = db.prepare('SELECT COUNT(*) AS cnt FROM users').get().cnt;
@@ -1429,7 +1458,7 @@ if (cmd === '!global') {
     let cooldownMs  = 24 * 60 * 60 * 1000;
     if (guildConf) {
       const m = guildConf.tempo.match(/(\d+)([dhm])/);
-      const v = m ? parseInt(m[1]) : 24;
+      const v = m ? parseInt(m[1], 10) : 24;
       cooldownMs = m[2] === 'h' ? v * 3600000
                  : m[2] === 'm' ? v *   60000
                  :                 v * 86400000;
@@ -1454,8 +1483,8 @@ if (cmd === '!global') {
   const lines = [
     '# 🏆Economy Information 🏆',
     '',
-    `🌐Global Balance: \`${totalCoins.toFixed(8)}\` **coins**`,
-    `💰Your Balance: \`${yourBalance.toFixed(8)}\` coins`,
+    `🌐Global Balance: \`${fromSats(totalCoins)}\` **coins**`,
+    `💰Your Balance: \`${fromSats(yourBalance)}\` coins`,
     nextRewardText === 'Available now'
       ? `⏱️Next Reward: 🎉 NOW 🎉`
       : `⏱️Next Reward: \`${nextRewardText}\`⚠️`,
@@ -1478,6 +1507,7 @@ if (cmd === '!global') {
 }
 
 
+
 if (cmd === '!claim') {
   try {
     const userId = message.author.id;
@@ -1490,12 +1520,12 @@ if (cmd === '!claim') {
       if (!conf) {
         return await message.reply('⚠️ No rewards.');
       }
-      coins     = conf.coins;
+      coins      = conf.coins;               // número de coins (ex: 1)
       cooldownMs = parseTempo(conf.tempo);
     } else {
       // Resgate via DM
-      coins     = 1;
-      cooldownMs = 24 * 60 * 60 * 1000; // 24h
+      coins      = 1;
+      cooldownMs = 24 * 60 * 60 * 1000;      // 24h
     }
 
     const last = getCooldown(userId);
@@ -1507,29 +1537,49 @@ if (cmd === '!claim') {
       return await message.reply(`⏳ Wait more ${h}h ${m}m to claim again.`);
     }
 
-    addCoins(userId, coins);
+    // ① converte o valor em coins para satoshis
+    const amountSats = toSats(coins);
+
+    // ② adiciona sats ao usuário
+    addCoins(userId, amountSats);
+
+    // ③ atualiza cooldown e notificação
     setCooldown(userId, now);
     setNotified(userId, false);
 
-    // ➊ registra transação de claim (from zeros para o usuário)
+    // ④ registra transação de claim (from “zero” para o usuário)
     try {
       const date = new Date().toISOString();
       const txId = genUniqueTxId();
       db.prepare(`
-        INSERT INTO transactions(id, date, from_id, to_id, amount)
+        INSERT INTO transactions (id, date, from_id, to_id, amount)
         VALUES (?, ?, ?, ?, ?)
-      `).run(txId, date, '000000000000', userId, coins);
+      `).run(
+        txId,
+        date,
+        '000000000000',  // endereço “zero”
+        userId,
+        amountSats
+      );
+
+      // ⑤ exibe ao usuário o valor formatado em coins
+      await message.reply(
+        `🎉 You claimed **${fromSats(amountSats)}** coins successfully!`
+      );
     } catch (err) {
       console.error('⚠️ Failed to log claim transaction:', err);
+      // ainda passa o valor correto formatado
+      await message.reply(
+        `🎉 You claimed **${fromSats(amountSats)}** coins, but I couldn't log the transaction.`
+      );
     }
 
-    await message.reply(`🎉 You claimed **${coins.toFixed(8)} coins** successfully!`);
   } catch (err) {
     console.error('❌ Command error !claim:', err);
     try {
       await message.reply('❌ Error while processing your claim. Try again later.');
     } catch (sendErr) {
-      console.error('❌ Falha ao enviar mensagem de erro no !claim:', sendErr);
+      console.error('❌ Message sending error while processing !claim:', sendErr);
     }
   }
 }
@@ -1558,6 +1608,8 @@ if (cmd === '!claim') {
 
 if (cmd === '!rank') {
   try {
+    const { fromSats } = require('./database');
+
     // 1) get all accounts
     const todos = getAllUsers();
     const totalAccounts = todos.length;
@@ -1585,12 +1637,12 @@ if (cmd === '!rank') {
         }
       }
 
-      descricao += `**${i + 1}.** ${displayName} — **${entry.coins.toFixed(8)} coins**\n`;
+      descricao += `**${i + 1}.** ${displayName} — **${fromSats(entry.coins)} coins**\n`;
     }
 
     // 4) total economy
     const totalEconomy = todos.reduce((acc, cur) => acc + cur.coins, 0);
-    descricao += `\n💰 **Global:** ${totalEconomy.toFixed(8)} **coins**`;
+    descricao += `\n💰 **Global:** ${fromSats(totalEconomy)} **coins**`;
     descricao += `\n**Total Accounts:** ${totalAccounts} **users**`;
 
     // 5) send embed
@@ -1611,8 +1663,10 @@ if (cmd === '!rank') {
       console.error('❌ Error sending !rank error message:', sendErr);
     }
   }
-}
+ }
 });
+
+
 
 
 
@@ -1622,29 +1676,30 @@ client.on('interactionCreate', async interaction => {
 
   // evita double-reply
   if (interaction.replied || interaction.deferred) return;
-  await safeDefer(interaction,{ flags: 64 });
+  await safeDefer(interaction, { flags: 64 });
 
+  const fs = require('fs');
+  const { toSats, fromSats, addCoins, setCooldown, setNotified, getCooldown, genUniqueTxId, db } = require('./database');
   const userId = interaction.user.id;
   let coins, cooldownMs;
 
   if (interaction.guildId) {
     // clique dentro de um servidor — mantém sua lógica original
-    const config = JSON.parse(fs.readFileSync(configFilePath));
-    const conf = config[interaction.guildId];
+    const config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+    const conf   = config[interaction.guildId];
     if (!conf) {
       return interaction.editReply({ content: '⚠ No claim rewards for this server.' });
     }
-    coins     = conf.coins;
+    coins      = conf.coins;
     cooldownMs = parseTempo(conf.tempo);
   } else {
     // clique na DM — define valores padrão
-    coins     = 1;                  // quantia padrão em DMs
-    cooldownMs = 24 * 60 * 60 * 1000; // 24h
+    coins      = 1;                     // quantia padrão em DMs
+    cooldownMs = 24 * 60 * 60 * 1000;   // 24h
   }
 
   const last = getCooldown(userId);
   const now  = Date.now();
-
   if (now - last < cooldownMs) {
     const restante = cooldownMs - (now - last);
     const h = Math.floor(restante / 3600000);
@@ -1652,23 +1707,31 @@ client.on('interactionCreate', async interaction => {
     return interaction.editReply({ content: `⏳ Wait more ${h}h ${m}m to claim again.` });
   }
 
-  addCoins(userId, coins);
+  // converte para satoshis e adiciona ao usuário
+  const amountSats = toSats(coins);
+  addCoins(userId, amountSats);
   setCooldown(userId, now);
   setNotified(userId, false);
 
-  // registra transação de claim (from zeros para o usuário)
+  // registra transação de claim (from zero para o usuário)
   try {
     const date = new Date().toISOString();
     const txId = genUniqueTxId();
     db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      INSERT INTO transactions (id, date, from_id, to_id, amount)
       VALUES (?, ?, ?, ?, ?)
-    `).run(txId, date, '000000000000', userId, coins);
+    `).run(txId, date, '000000000000', userId, amountSats);
   } catch (err) {
     console.error('⚠️ Failed to log claim transaction:', err);
   }
-  return interaction.editReply({ content: `🎉 You claimed **${coins.toFixed(8)} coins** successfully!` });
+
+  // responde exibindo sempre 8 casas decimais
+  return interaction.editReply({
+    content: `🎉 You claimed **${fromSats(amountSats)}** coins successfully!`
+  });
 });
+
+
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
@@ -1698,34 +1761,38 @@ client.on('interactionCreate', async interaction => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() || interaction.customId !== 'atm_balance') return;
 
+  // evita double-reply
   if (interaction.replied || interaction.deferred) return;
   try {
-    await safeDefer(interaction,{ flags: 64 }); // ephemeral response
-  } catch (e) {
+    await safeDefer(interaction, { flags: 64 }); // resposta ephemeral
+  } catch {
     return;
   }
 
+  const { getUser, fromSats } = require('./database');
   const user = getUser(interaction.user.id);
+
   return interaction.editReply({
-    content: `💰 Account **${interaction.user.tag} Balance:** ${user.coins.toFixed(8)} **coins**`
+    content: `💰 Account **${interaction.user.tag} Balance:** ${fromSats(user.coins)} **coins**`
   });
 });
 
 const userCommand = require('./commands/user');
 
+// Handler para o modal de usuário
 client.on('interactionCreate', async interaction => {
   // Só processa se for modal submit com customId 'user_modal'
   if (!interaction.isModalSubmit() || interaction.customId !== 'user_modal') return;
 
+  // evita double-reply
   if (interaction.replied || interaction.deferred) return;
 
   try {
-    // safeDefer chama deferReply de forma segura e ephemerally
-    await safeDefer(interaction, { flags: 64 }); // ephemeral
+    // ephemerally defer the reply
+    await safeDefer(interaction, { flags: 64 });
 
-    // Executa o modalSubmit do comando user.js sem deferReply dentro dele
+    // executa o modalSubmit do comando user.js
     await userCommand.modalSubmit(interaction);
-
   } catch (e) {
     console.error('User modal error:', e);
     try {
@@ -1794,78 +1861,111 @@ client.on('interactionCreate', async (interaction) => {
   // 1) Acknowledge the modal immediately
   try {
     await interaction.deferReply({ ephemeral: true });
-  } catch (err) {
-    console.warn('⚠️ No permission to reply:', err);
-    // podemos continuar mesmo assim, mas é possível que já esteja acked
+  } catch {
+    // may already be acknowledged—continue anyway
   }
+
+  const fs   = require('fs');
+  const path = require('path');
+  const os   = require('os');
+  const { AttachmentBuilder } = require('discord.js');
+  const { getUser, createUser, toSats, fromSats } = require('./database');
 
   // 2) Read inputs
   const senderId = interaction.user.id;
-  const targetId = interaction.fields.getTextInputValue('userId');
-  const amount   = parseFloat(interaction.fields.getTextInputValue('valor'));
+  const targetId = interaction.fields.getTextInputValue('userId').trim();
+  const amountStr = interaction.fields.getTextInputValue('valor').trim();
 
   // 3) Validate
-  if (!targetId || isNaN(amount) || amount <= 0 || targetId === senderId) {
+  if (
+    !targetId ||
+    !/^\d+(\.\d{1,8})?$/.test(amountStr) ||
+    targetId === senderId
+  ) {
     return interaction.editReply({ content: '❌ Unknown data.' });
   }
+  const amountSats = toSats(amountStr);
+  if (amountSats <= 0) {
+    return interaction.editReply({ content: '❌ Unknown data.' });
+  }
+
+  // 4) Check sender balance
   const sender = getUser(senderId);
-  if (sender.coins < amount) {
+  if (sender.coins < amountSats) {
     return interaction.editReply({ content: '💸 Low balance.' });
   }
 
-  // 4) Perform transfer + log in the database
-  setCoins(senderId, sender.coins - amount);
-  addCoins(targetId, amount);
+  // ensure target exists in DB
+  try {
+    getUser(targetId);
+  } catch {
+    createUser(targetId);
+  }
 
-  // registra transação para o sender com UUID único
-  const date = new Date().toISOString();
-  const txIdSender = genUniqueTxId();
-  db.prepare(`
-    INSERT INTO transactions(id, date, from_id, to_id, amount)
-    VALUES (?,?,?,?,?)
-  `).run(txIdSender, date, senderId, targetId, amount);
+  // 5) Perform transfer
+  try {
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
+      .run(amountSats, senderId);
+    db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+      .run(amountSats, targetId);
+  } catch (err) {
+    console.error('⚠️ Error updating balances:', err);
+    return interaction.editReply({ content: '❌ Transfer failed.' });
+  }
 
-  // registra também no histórico do receiver com outro UUID único
+  // 6) Log transactions
+  const date        = new Date().toISOString();
+  const txIdSender   = genUniqueTxId();
   const txIdReceiver = genUniqueTxId();
-  db.prepare(`
-    INSERT INTO transactions(id, date, from_id, to_id, amount)
-    VALUES (?,?,?,?,?)
-  `).run(txIdReceiver, date, senderId, targetId, amount);
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO transactions(id, date, from_id, to_id, amount)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(txIdSender, date, senderId, targetId, amountSats);
+    stmt.run(txIdReceiver, date, senderId, targetId, amountSats);
+  } catch (err) {
+    console.error('⚠️ Error logging transactions:', err);
+  }
 
-  // 5) Build the comprovante file for the sender
+  // 7) Build the comprovante file
   const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   const filePath = path.join(tempDir, `${senderId}-${txIdSender}.txt`);
   const fileContent = [
     `Transaction ID: ${txIdSender}`,
     `Date         : ${date}`,
     `From         : ${senderId}`,
     `To           : ${targetId}`,
-    `Amount       : ${amount.toFixed(8)} coins`
+    `Amount       : ${fromSats(amountSats)} coins`
   ].join(os.EOL);
   fs.writeFileSync(filePath, fileContent);
 
-  // 6) Attempt to send the file in a single editReply
+  // 8) Attempt to send the file in a single editReply
   try {
     await interaction.editReply({
-      content: `✅ Sent **${amount.toFixed(8)} coins** to <@${targetId}>.`,
-      files: [ new AttachmentBuilder(filePath, { name: `${senderId}-${txIdSender}.txt` }) ]
+      content: `✅ Sent **${fromSats(amountSats)} coins** to <@${targetId}>.`,
+      files: [
+        new AttachmentBuilder(filePath, {
+          name: `${senderId}-${txIdSender}.txt`
+        })
+      ]
     });
   } catch (err) {
-    // provavelmente falta permissão ATTACH_FILES → fallback para apenas mostrar o TXID
     console.warn('⚠️ No permission to send the transaction file:', err);
     try {
       await interaction.editReply({
-        content: `✅ Sent **${amount.toFixed(8)} coins** to <@${targetId}>.\nComprovante: \`${txIdSender}\``
+        content: `✅ Sent **${fromSats(amountSats)} coins** to <@${targetId}>.\nComprovante: \`${txIdSender}\``
       });
     } catch (err2) {
       console.error('⚠️ Fallback failure:', err2);
     }
   } finally {
-    // 7) clean up the temp file
+    // 9) clean up the temp file
     try { fs.unlinkSync(filePath); } catch {}
   }
 });
+
 
 
 // Registra automaticamente novos usuários no banco quando entrarem em qualquer servidor
@@ -1919,6 +2019,7 @@ client.on('guildMemberAdd', async (member) => {
 
 
 function removeOldBills() {
+  const { fromSats } = require('./database');
   const threshold = Date.now() - NINETY_DAYS;
 
   try {
@@ -1937,7 +2038,7 @@ function removeOldBills() {
               '*You will need to call another bill ID.*',
               '',
               `Bill ID: \`${bill_id}\``,
-              `Worth: \`${parseFloat(amount).toFixed(8)}\` coins.`
+              `Worth: \`${fromSats(amount)} coins.\``
             ].join('\n'));
 
           enqueueDM(from_id, embed.toJSON(), { components: [] });
@@ -1957,6 +2058,8 @@ function removeOldBills() {
     console.warn('⚠️ Old bill deleting error:', err);
   }
 }
+
+
 
 
 // Função para registrar apenas usuários novos (que ainda não existem no DB)

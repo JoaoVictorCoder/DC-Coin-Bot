@@ -1,39 +1,39 @@
 // billprocessor.js
 
 const {
-  createBill,   // importa a função de criar bill
-  getBill,
-  getUser,
-  setCoins,
-  addCoins,
-  db,
-  deleteBill,
-  enqueueDM
-} = require('./database'); // caminho relativo à raiz do projeto
+  createBill
+} = require('./database'); // path relative to project root
+const { toSats, fromSats } = require('./database');
 
 module.exports = function setupBillProcessor(client) {
   client.on('interactionCreate', async interaction => {
-    // processa apenas submits do modal /bill
     if (!interaction.isModalSubmit() || interaction.customId !== 'bill_modal') return;
 
-    // 1) Ack imediato
+    // 1) Acknowledge immediately
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    // 2) Lê e normaliza inputs
-    const toIdRaw      = interaction.fields.getTextInputValue('toId').trim();
-    const fromIdRaw    = interaction.fields.getTextInputValue('fromId').trim();
-    const amountStr    = interaction.fields.getTextInputValue('amount').trim();
-    const timeStr      = interaction.fields.getTextInputValue('time').trim();
+    // 2) Read and normalize inputs
+    const toIdRaw   = interaction.fields.getTextInputValue('toId').trim();
+    const fromIdRaw = interaction.fields.getTextInputValue('fromId').trim();
+    const amountStr = interaction.fields.getTextInputValue('amount').trim();
+    const timeStr   = interaction.fields.getTextInputValue('time').trim();
     const toId   = toIdRaw || interaction.user.id;
     const fromId = fromIdRaw || '';
 
-    // 3) Valida amount
+    // 3) Validate amount format
     if (!/^\d+(\.\d+)?$/.test(amountStr)) {
-      return interaction.editReply('❌ Invalid amount.');
+      return interaction.editReply('❌ Invalid amount format.');
+    }
+    const amountDecimal = parseFloat(amountStr);
+    if (isNaN(amountDecimal) || amountDecimal <= 0) {
+      return interaction.editReply('❌ Invalid amount value.');
     }
 
-    // 4) Calcula timestamp (mesma lógica do /bill)
-    const MS_IN_HOUR = 3600 * 1000;
+    // 4) Convert decimal to integer satoshis
+    const amountSats = toSats(amountStr);
+
+    // 5) Calculate expiration timestamp
+    const MS_IN_HOUR   = 3600 * 1000;
     const MS_IN_DAY    = 24 * MS_IN_HOUR;
     const NINETY_DAYS  = 90 * MS_IN_DAY;
     const SIX_MONTHS   = 182 * MS_IN_DAY;
@@ -41,7 +41,7 @@ module.exports = function setupBillProcessor(client) {
     if (timeStr) {
       const m = timeStr.match(/^(\d+)([dhms])$/);
       if (!m) {
-        return interaction.editReply('❌ Invalid time. Use 1d, 2h, 30m or 45s.');
+        return interaction.editReply('❌ Invalid time. Use e.g. 1d, 2h, 30m, or 45s.');
       }
       const val = parseInt(m[1], 10);
       let delta;
@@ -53,23 +53,27 @@ module.exports = function setupBillProcessor(client) {
       }
       if (delta < MS_IN_HOUR) delta = MS_IN_HOUR;
       if (delta > SIX_MONTHS) delta = SIX_MONTHS;
-      timestamp = (delta <= NINETY_DAYS)
+      timestamp = delta <= NINETY_DAYS
         ? Date.now() - (NINETY_DAYS - delta)
         : Date.now() + (delta - NINETY_DAYS);
     }
 
-    // 5) Cria a bill no DB
+    // 6) Create the bill in DB using integer satoshis
     let billId;
     try {
-      billId = createBill(fromId, toId, amountStr, timestamp);
+      billId = createBill(fromId, toId, amountSats, timestamp);
     } catch (err) {
       console.warn('⚠️ Error creating bill:', err);
       return interaction.editReply('❌ Could not create bill.');
     }
 
-    // 6) Resposta final
+    // 7) Final response with human-readable amount
     return interaction.editReply(
-      `✅ Bill created: \`\`\`${billId}\`\`\`\nReceiver: \`${toId}\`\nTo charge: \`${fromId}\`\nUse \`!paybill ${billId}\`\nOr use \`/bill\` to pay it.`
+      `✅ Bill created: \`\`\`${billId}\`\`\`\n` +
+      `• Amount: **${fromSats(amountSats)}** coins\n` +
+      `• Receiver: \`${toId}\`\n` +
+      `• Payer:    \`${fromId || 'unspecified'}\`\n\n` +
+      `Use \`/paybill ${billId}\` to pay it.`
     );
   });
 };

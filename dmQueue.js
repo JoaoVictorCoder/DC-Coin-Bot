@@ -1,20 +1,24 @@
 // dmQueue.js
 const { getNextDM, deleteDM, db } = require('./database');
-const { client } = require('./bot');        // pegue o client já exportado pelo bot
 const { EmbedBuilder, ActionRowBuilder } = require('discord.js');
 
+let _client;      // aqui guardaremos o client após chamar init()
 let isProcessing = false;
+
+module.exports.init = (clientInstance) => {
+  _client = clientInstance;
+};
 
 async function sendOneDM(job) {
   const { id, user_id, embed_json, row_json } = job;
   try {
     const embedObj = EmbedBuilder.from(JSON.parse(embed_json));
     const rowObj   = ActionRowBuilder.from(JSON.parse(row_json));
-
-    const payload = { embeds: [embedObj] };
+    const payload  = { embeds: [embedObj] };
     if (rowObj.components.length) payload.components = [rowObj];
 
-    const user = await client.users.fetch(user_id);
+    // agora usamos _client em vez de client
+    const user = await _client.users.fetch(user_id);
     await user.send(payload);
   } catch (err) {
     console.warn(`⚠️ DM failure to ${user_id}: ${err.message}`);
@@ -24,6 +28,10 @@ async function sendOneDM(job) {
 }
 
 async function processDMQueue() {
+  if (!_client) {
+    console.warn('⚠️ dmQueue not initialized with client yet');
+    return;
+  }
   if (isProcessing) return;
   isProcessing = true;
 
@@ -51,8 +59,9 @@ async function processDMQueue() {
   isProcessing = false;
 }
 
-// Inicie automaticamente e exporte a função:
+// dispara automaticamente
 processDMQueue();
 setInterval(processDMQueue, 5 * 1000);
 
-module.exports = { processDMQueue };
+// exporta também o processDMQueue caso queira invocar manualmente
+module.exports.processDMQueue = processDMQueue;

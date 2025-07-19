@@ -1,5 +1,4 @@
 // paybillprocessor.js
-
 const {
   getBill,
   getUser,
@@ -7,12 +6,10 @@ const {
   setCoins,
   db,
   deleteBill,
-  enqueueDM
+  enqueueDM,
+  fromSats
 } = require('./database');
-
-const {
-  processDMQueue
-} = require('./dmQueue');
+const { processDMQueue } = require('./dmQueue');
 
 /**
  * Registers a handler to process /paybill modal submissions.
@@ -28,12 +25,8 @@ module.exports = function setupPaybillProcessor(client) {
     // 2) Read inputs
     const billId = interaction.fields.getTextInputValue('billId').trim();
 
-    let bill;
-    try {
-      bill = getBill(billId);
-    } catch (err) {
-      console.warn('⚠️ Error fetching bill:', err);
-    }
+    // 3) Fetch the bill
+    const bill = getBill(billId);
     if (!bill) {
       return interaction.editReply('❌ Bill not found.');
     }
@@ -42,49 +35,34 @@ module.exports = function setupPaybillProcessor(client) {
     const toId       = bill.to_id;
     const fromId     = bill.from_id;
 
-    // 3) Parse and truncate amount to 8 decimal places
-    let amount = parseFloat(bill.amount);
-    amount = Math.floor(amount * 1e8) / 1e8;
-    if (isNaN(amount) || amount <= 0) {
+    // 4) Read stored satoshis directly
+    const amountSats = Number(bill.amount);
+    if (!Number.isInteger(amountSats) || amountSats <= 0) {
       return interaction.editReply('❌ Invalid bill amount.');
     }
 
     const selfPay = executorId === toId;
 
-    // 4) If not self-pay, verify balance & perform transfer
+    // 5) If not self-pay, verify balance & perform transfer
     if (!selfPay) {
-      let payer;
-      try {
-        payer = getUser(executorId);
-      } catch {
-        payer = null;
-      }
+      const payer = getUser(executorId);
       if (!payer) {
         return interaction.editReply('❌ Your account not found.');
       }
-      if (payer.coins < amount) {
-        return interaction.editReply(`💸 Low balance. You need **${amount.toFixed(8)}** coins.`);
+      if (payer.coins < amountSats) {
+        return interaction.editReply(
+          `💸 Low balance. You need **${fromSats(amountSats)}** coins.`
+        );
       }
 
-      let payee;
-      try {
-        payee = getUser(toId);
-      } catch {
-        payee = null;
-      }
+      let payee = getUser(toId);
       if (!payee) {
-        try {
-          createUser(toId);
-          payee = getUser(toId);
-        } catch (err) {
-          console.warn('⚠️ Error creating payee:', err);
-          return interaction.editReply('❌ Could not create recipient account.');
-        }
+        createUser(toId);
+        payee = getUser(toId);
       }
 
-      // compute new balances and truncate
-      const newPayerBalance = Math.floor((payer.coins - amount) * 1e8) / 1e8;
-      const newPayeeBalance = Math.floor((payee.coins + amount) * 1e8) / 1e8;
+      const newPayerBalance = payer.coins - amountSats;
+      const newPayeeBalance = payee.coins + amountSats;
 
       try {
         setCoins(executorId, newPayerBalance);
@@ -95,30 +73,30 @@ module.exports = function setupPaybillProcessor(client) {
       }
     }
 
-    // 5) Log transaction with truncated amount
+    // 6) Log transaction (best effort)
     const paidAt = new Date().toISOString();
     try {
       db.prepare(`
         INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?,?,?,?,?)
-      `).run(billId, paidAt, executorId, toId, amount);
+        VALUES (?, ?, ?, ?, ?)
+      `).run(billId, paidAt, executorId, toId, amountSats);
     } catch (err) {
       console.warn('⚠️ Error logging transaction:', err);
     }
 
-    // 6) Delete the bill
+    // 7) Delete the bill
     try {
       deleteBill(billId);
     } catch (err) {
       console.warn('⚠️ Error deleting bill:', err);
     }
 
-    // 7) Enqueue DM for recipient (toId)
+    // 8) Notify the recipient
     try {
       enqueueDM(toId, {
         title: '🏦 Bill Paid 🏦',
         description: [
-          `Received **${amount.toFixed(8)}** coins`,
+          `Received **${fromSats(amountSats)}** coins`,
           `From: \`${executorId}\``,
           `Bill ID: \`${billId}\``,
           '*Received ✅*'
@@ -130,13 +108,13 @@ module.exports = function setupPaybillProcessor(client) {
       console.warn('⚠️ Error enqueueing recipient DM:', err);
     }
 
-    // 8) Enqueue DM for bill creator (fromId) if exists and different
+    // 9) Notify the bill creator if different
     if (fromId && fromId !== executorId) {
       try {
         enqueueDM(fromId, {
           title: '🏦 Your Bill Was Paid 🏦',
           description: [
-            `Your bill \`${billId}\` for **${amount.toFixed(8)}** coins`,
+            `Your bill \`${billId}\` for **${fromSats(amountSats)}** coins`,
             `was paid by: \`${executorId}\``,
             '*Thank you!*'
           ].join('\n'),
@@ -147,22 +125,23 @@ module.exports = function setupPaybillProcessor(client) {
       }
     }
 
-    // 9) Process DM queue
+    // 10) Process any remaining DMs
     if (typeof interaction.client.processDMQueue === 'function') {
       interaction.client.processDMQueue();
     }
 
-    // 10) Final reply
+    // 11) Final reply to executor
     let toTag = 'yourself';
     try {
       toTag = selfPay
         ? 'yourself'
         : (await interaction.client.users.fetch(toId)).tag;
     } catch {}
+
     return interaction.editReply(
       selfPay
         ? `✅ You canceled your own bill \`${billId}\`.`
-        : `✅ Paid **${amount.toFixed(8)}** coins to **${toTag}** (\`${toId}\`).`
+        : `✅ Paid **${fromSats(amountSats)}** coins to **${toTag}** (\`${toId}\`).`
     );
   });
 };

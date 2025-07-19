@@ -17,26 +17,50 @@ function startApiServer() {
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
-    return res.status(400).json({ sessionCreated: false, passwordCorrect: false });
+    return res
+      .status(400)
+      .json({ sessionCreated: false, passwordCorrect: false });
   }
 
   // Gera o hash SHA-256 da senha
   let passwordHash;
   try {
-    passwordHash = crypto.createHash('sha256')
-                         .update(password)
-                         .digest('hex');
+    passwordHash = crypto
+      .createHash('sha256')
+      .update(password)
+      .digest('hex');
   } catch (err) {
     console.error('Error hashing password:', err);
-    return res.status(500).json({ sessionCreated: false, passwordCorrect: false });
+    return res
+      .status(500)
+      .json({ sessionCreated: false, passwordCorrect: false });
   }
 
+  // Extrai o IP do cliente
+  const ipAddress = req.ip;
+
   try {
-    const loginResult = await logic.login(username, passwordHash);
-    return res.json(loginResult);
-  } catch (e) {
-    console.error('Login error:', e);
-    return res.status(500).json({ sessionCreated: false, passwordCorrect: false });
+    const result = await logic.login(username, passwordHash, ipAddress);
+
+    // Se o IP está bloqueado, retorna 429 com tempo restante
+    if (result.error === 'IP_LOCKED') {
+      const retrySec = Math.ceil(result.retryAfterMs / 1000);
+      return res
+        .status(429)
+        .json({
+          sessionCreated:   false,
+          passwordCorrect:  false,
+          error:            `IP blocked. Try again in ${retrySec} seconds.`
+        });
+    }
+
+    // Caso normal (sucesso ou credenciais inválidas)
+    return res.json(result);
+  } catch (err) {
+    console.error('Login error:', err);
+    return res
+      .status(500)
+      .json({ sessionCreated: false, passwordCorrect: false });
   }
 });
 
@@ -157,7 +181,7 @@ app.post('/api/transfer/card', async (req, res) => {
   }
 
   // 2) Truncamento para 8 casas decimais
-  const amt = Math.floor(Number(amount) * 1e8) / 1e8;
+  const { txId, date } = await logic.transferCoins(ownerId, toId, amount);
   if (isNaN(amt) || amt <= 0) {
     return res.status(400).json({ success: false });
   }
@@ -467,13 +491,9 @@ app.post('/api/bill/create', authMiddleware, async (req, res) => {
 
   // — SALDO do usuário (exige autenticação) —
 app.get('/api/user/:userId/balance', authMiddleware, async (req, res) => {
-  try {
-    const coins = await logic.getSaldo(req.userId);
-    return res.json({ coins });
-  } catch (e) {
-    console.error('Get saldo error:', e);
-    return res.status(500).json({ error: 'Internal error' });
-  }
+  const coinsStr = await logic.getSaldo(req.userId);     // ex: "0.12345678"
+  const coins    = parseFloat(coinsStr) || 0;             // agora number
+  return res.json({ coins });
 });
 
 app.get('/api/rank', authMiddleware, async (req, res) => {
