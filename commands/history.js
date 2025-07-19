@@ -1,39 +1,42 @@
 // commands/history.js
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
-const os   = require('os');
-const { db, getUser } = require('../database');
+const os = require('os');
+const { db, getUser, fromSats } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('history')
     .setDescription('See the transaction history')
     .addStringOption(opt =>
-      opt.setName('user')
-         .setDescription('User mention or ID (default: you)')
-         .setRequired(false)
+      opt
+        .setName('user')
+        .setDescription('User mention or ID (default: you)')
+        .setRequired(false)
     )
     .addIntegerOption(opt =>
-      opt.setName('page')
-         .setDescription('Page number (100 entries per page)')
-         .setRequired(false)
+      opt
+        .setName('page')
+        .setDescription('Page number (100 entries per page)')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
-    // 1️⃣ Defer ephemerally to avoid timeout
+    // Defer ephemerally to avoid timeout
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     try {
-      // 2️⃣ Parse inputs
+      // Parse inputs
       let requestedId = interaction.options.getString('user') || interaction.user.id;
       const mention = requestedId.match(/^<@!?(?<id>\d+)>$/);
       if (mention) requestedId = mention.groups.id;
+
       const pageArg = interaction.options.getInteger('page');
       const perPage = 100;
       let page = pageArg && pageArg > 0 ? pageArg : 1;
 
-      // 3️⃣ Fetch and validate user record
+      // Fetch and validate user record
       let userRow;
       try {
         userRow = getUser(requestedId);
@@ -42,7 +45,7 @@ module.exports = {
         return interaction.editReply('❌ Unknown user.').catch(() => null);
       }
 
-      // 4️⃣ Deduplicate this user's transactions (best effort)
+      // Deduplicate this user's transactions (best effort)
       try {
         db.prepare(`
           DELETE FROM transactions
@@ -58,7 +61,7 @@ module.exports = {
         console.warn('⚠️ [/history] dedupe failed:', e);
       }
 
-      // 5️⃣ Count total transactions
+      // Count total transactions
       const { cnt: totalCount } = db.prepare(`
         SELECT COUNT(*) AS cnt
         FROM transactions
@@ -68,26 +71,27 @@ module.exports = {
       const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
       if (page > maxPage) page = maxPage;
 
-      // 6️⃣ Fetch display name
+      // Fetch display name
       let username = requestedId;
       try {
         const u = await interaction.client.users.fetch(requestedId);
         username = u.username;
       } catch {}
 
-      // 7️⃣ Build header
+      // Build header
       const header = [];
       if (pageArg > maxPage) header.push(`⚠️ Showing latest page: ${maxPage}`);
       header.push(`🔄 User: ${username} (\`${requestedId}\`)`);
       header.push(`⏱️ Transactions: ${totalCount}`);
-      header.push(`💸 Balance: ${userRow.coins.toFixed(8)} coins`);
+      const displayBalance = fromSats(userRow.coins ?? 0);
+      header.push(`💸 Balance: ${displayBalance} coins`);
       header.push(`📖 Page: ${page}/${maxPage}`);
 
       if (totalCount === 0) {
         return interaction.editReply({ content: header.concat('⚠️ No Transactions ⚠️').join('\n') });
       }
 
-      // 8️⃣ Retrieve this page of transactions
+      // Retrieve this page of transactions
       const offset = (page - 1) * perPage;
       const transactions = db.prepare(`
         SELECT * FROM transactions
@@ -96,24 +100,24 @@ module.exports = {
         LIMIT ? OFFSET ?
       `).all(requestedId, requestedId, perPage, offset);
 
-      // 9️⃣ Build text blocks
+      // Build text blocks
       const blocks = transactions.map(tx => [
         `UUID:   ${tx.id}`,
-        `AMOUNT: ${tx.amount.toFixed(8)} coins`,
+        `AMOUNT: ${fromSats(tx.amount)} coins`,
         `FROM:   ${tx.from_id}`,
         `TO:     ${tx.to_id}`,
         `DATE:   ${tx.date}`
       ].join(os.EOL));
       const content = blocks.join(os.EOL + os.EOL);
 
-      // 🔟 Write temp file
+      // Write temp file
       const tempDir = path.join(__dirname, '..', 'temp');
       fs.mkdirSync(tempDir, { recursive: true });
       const fileName = `${requestedId}_history_${page}.txt`;
       const filePath = path.join(tempDir, fileName);
       fs.writeFileSync(filePath, content, 'utf8');
 
-      // 1️⃣1️⃣ Prepare attachment
+      // Prepare attachment
       let attachment;
       try {
         attachment = new AttachmentBuilder(filePath, { name: fileName });
@@ -121,16 +125,15 @@ module.exports = {
         console.warn('⚠️ [/history] attachment creation failed:', e);
       }
 
-      // 1️⃣2️⃣ Send the reply
+      // Send the reply
       const replyPayload = { content: header.join('\n') };
       if (attachment) replyPayload.files = [attachment];
       await interaction.editReply(replyPayload);
 
-      // 1️⃣3️⃣ Clean up temp file
+      // Clean up temp file
       fs.unlinkSync(filePath);
     } catch (err) {
       console.error('❌ Error in /history command:', err);
-      // Fallback error reply
       try {
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ content: '❌ Could not retrieve history.', ephemeral: true });

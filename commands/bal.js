@@ -1,35 +1,35 @@
 // commands/bal.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getUser } = require('../database');
+const { getUser, fromSats } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('bal')
-    .setDescription('Shows you your balance'),
-  
+    .setDescription('Show your balance'),
+
   async execute(interaction) {
-    // 1) Defer to give us time and make the reply ephemeral
+    // Defer ephemerally to give us time
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    let user;
+    let userRecord;
     try {
-      // 2) Fetch from DB
-      user = getUser(interaction.user.id);
+      userRecord = getUser(interaction.user.id);
+      if (!userRecord) throw new Error('User not found');
     } catch (err) {
       console.error('❌ Failed to load user in /bal:', err);
-      // Can't edit reply with ephemeral flag again, since defer was ephemeral.
-      return interaction.editReply({
-        content: '❌ Could not retrieve your balance. Please try again later.'
-      }).catch(() => null);
+      return interaction.editReply('❌ Could not retrieve your balance. Please try again later.')
+        .catch(() => null);
     }
 
-    // 3) Build embed
+    // Convert satoshis to human-readable coins
+    const displayBalance = fromSats(userRecord.coins ?? 0);
+
+    // Build and send embed
     const embed = new EmbedBuilder()
       .setColor('Gold')
       .setTitle('💰 Your Balance')
-      .setDescription(`You have **${user.coins.toFixed(8)} coins**.`);
-
-    // 4) Send it
+      .setDescription(`You have **${displayBalance} coins**.`);
+    
     try {
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {

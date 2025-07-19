@@ -1,6 +1,6 @@
 // commands/rank.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getAllUsers, getUser } = require('../database');
+const { getAllUsers, getUser, fromSats } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -41,12 +41,15 @@ module.exports = {
           }
         }
 
-        description += `**${i + 1}.** ${displayName} — **${entry.coins.toFixed(8)} coins**\n`;
+        // convert satoshi balance to human-readable
+        const displayBalance = fromSats(entry.coins);
+        description += `**${i + 1}.** ${displayName} — **${displayBalance} coins**\n`;
       }
 
       // Add global stats
       const totalEconomy = users.reduce((sum, u) => sum + (u.coins || 0), 0);
-      description += `\n💰 **Global:** ${totalEconomy.toFixed(8)} **coins**`;
+      const displayTotal = fromSats(totalEconomy);
+      description += `\n💰 **Global:** ${displayTotal} **coins**`;
       description += `\n**Total Accounts:** ${totalAccounts} **users**`;
 
       // Respond

@@ -2,13 +2,13 @@
 const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { db, getUser, getCooldown } = require('../database');
+const { db, getUser, getCooldown, fromSats } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('global')
     .setDescription('Shows global economy information'),
-  
+
   async execute(interaction) {
     try {
       // 1) Defer the reply ephemerally to gain extra time
@@ -28,7 +28,7 @@ module.exports = {
         console.warn('⚠️ Failed to remove duplicate transactions globally:', err);
       }
 
-      // 3) Gather global stats
+      // 3) Gather global stats (raw satoshi integers)
       let totalCoins   = 0;
       let totalTx      = 0;
       let totalClaims  = 0;
@@ -36,18 +36,23 @@ module.exports = {
       let totalBills   = 0;
       let yourBalance  = 0;
       try {
-        totalCoins   = db.prepare('SELECT SUM(coins) AS sum FROM users').get().sum || 0;
+        const sumRow = db.prepare('SELECT SUM(coins) AS sum FROM users').get();
+        totalCoins   = sumRow.sum || 0;
         totalTx      = db.prepare('SELECT COUNT(*) AS cnt FROM transactions').get().cnt;
         totalClaims  = db.prepare(
           "SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = '000000000000'"
         ).get().cnt;
         totalUsers   = db.prepare('SELECT COUNT(*) AS cnt FROM users').get().cnt;
         totalBills   = db.prepare('SELECT COUNT(*) AS cnt FROM bills').get().cnt;
-        yourBalance  = getUser(interaction.user.id).coins;
+        yourBalance  = getUser(interaction.user.id).coins || 0;
       } catch (err) {
         console.error('⚠️ Failed to fetch global stats:', err);
         return interaction.editReply({ content: '❌ Error retrieving global economy info.' });
       }
+
+      // convert to human-readable
+      const displayTotalCoins  = fromSats(totalCoins);
+      const displayYourBalance = fromSats(yourBalance);
 
       // 4) Calculate time until next reward
       let nextRewardText = 'Unknown';
@@ -84,20 +89,20 @@ module.exports = {
       // 5) Count servers
       const totalGuilds = interaction.client.guilds.cache.size;
 
-      // 6) Build a quoted-style message
+      // 6) Build a quoted-style message using human-readable balances
       const lines = [
-        '# 🏆Economy Information 🏆',
+        '# 🏆 Economy Information 🏆',
         '',
-        `🌐 Global Balance: \`${totalCoins.toFixed(8)}\` coins`,
-        `💰 Your Balance:  \`${yourBalance.toFixed(8)}\` coins`,
-        `⏱️ Next Reward:   ${nextRewardText}`,
-        `🏦 Servers:       \`${totalGuilds}\``,
-        `📖 Transactions:  \`${totalTx}\``,
-        `💳 Bills:         \`${totalBills}\``,
-        `📨 Claims:        \`${totalClaims}\``,
-        `⭐ Coin Users:    \`${totalUsers}\``,
+        `🌐 Global Balance: \`${displayTotalCoins}\` coins`,
+        `💰 Your Balance: \`${displayYourBalance}\` coins`,
+        `⏱️ Next Reward: ${nextRewardText}`,
+        `🏦 Servers: \`${totalGuilds}\` servers`,
+        `📖 Transactions: \`${totalTx}\``,
+        `💳 Bills: \`${totalBills}\` bills`,
+        `📨 Claims: \`${totalClaims}\` claims`,
+        `⭐ Coin Users: \`${totalUsers}\` users`,
         '',
-        '🪙 Oficial Discord Coin System 🪙'
+        '🪙 Official Discord Coin System 🪙'
       ];
       const messageContent = lines.map(l => `> ${l}`).join('\n');
 

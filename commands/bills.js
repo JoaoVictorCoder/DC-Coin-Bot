@@ -4,6 +4,7 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 const logic = require('../logic.js');
+const { fromSats } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -17,28 +18,28 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // 1️⃣ Defer para evitar timeout (ephemeral)
+    // Defer to avoid timeout (ephemeral)
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     const userId = interaction.user.id;
     const page   = interaction.options.getInteger('page') || 1;
 
-    // 2️⃣ Busca faturas “a pagar” e “a receber”
+    // Fetch bills to pay and to receive
     let bills;
     try {
       const toPay     = await logic.getBillsTo(userId, page);
       const toReceive = await logic.getBillsFrom(userId, page);
       bills = [...toPay, ...toReceive];
     } catch (err) {
-      console.error('⚠️ Bills list failure:', err);
-      return interaction.editReply('❌ Bills loading error.');
+      console.error('⚠️ [/bills] Failed to load bills:', err);
+      return interaction.editReply('❌ Bills loading error.').catch(() => null);
     }
 
     if (bills.length === 0) {
-      return interaction.editReply('ℹ️ You do not have pending bills.');
+      return interaction.editReply('ℹ️ You do not have pending bills.').catch(() => null);
     }
 
-    // 3️⃣ Prepara diretório temporário e arquivo
+    // Prepare temp directory and file
     const tempDir = path.join(__dirname, '..', 'temp');
     fs.mkdirSync(tempDir, { recursive: true });
 
@@ -46,8 +47,8 @@ module.exports = {
       `BILL ID : ${b.id}`,
       `FROM    : ${b.from_id}`,
       `TO      : ${b.to_id}`,
-      `AMOUNT  : ${b.amount}`,
-      `DATE    : ${new Date(b.date).toLocaleString('pt-BR')}`
+      `AMOUNT  : ${fromSats(b.amount)} coins`,
+      `DATE    : ${new Date(b.date).toISOString()}`
     ].join(os.EOL));
 
     const content  = lines.join(os.EOL + os.EOL);
@@ -57,10 +58,10 @@ module.exports = {
     try {
       fs.writeFileSync(filePath, content, 'utf8');
     } catch (err) {
-      console.error('⚠️ Bills file creating error:', err);
+      console.error('⚠️ [/bills] Failed to create bills file:', err);
     }
 
-    // 4️⃣ Monta resposta com anexo
+    // Build reply with attachment
     const reply = {
       content: `📋 **Your bills (${bills.length}):**\n` +
                bills.map((b, i) => `**${i + 1}.** \`${b.id}\``).join('\n'),
@@ -70,14 +71,14 @@ module.exports = {
     try {
       reply.files.push(new AttachmentBuilder(filePath, { name: fileName }));
     } catch (err) {
-      console.warn('⚠️ AttachmentBuilder failure:', err);
+      console.warn('⚠️ [/bills] AttachmentBuilder failure:', err);
     }
 
-    await interaction.editReply(reply);
+    await interaction.editReply(reply).catch(() => null);
 
-    // 5️⃣ Limpa arquivo temporário
+    // Clean up temp file
     try {
       fs.unlinkSync(filePath);
-    } catch (_) {}
+    } catch {}
   }
 };
