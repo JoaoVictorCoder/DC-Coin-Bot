@@ -296,11 +296,28 @@ async function unregisterUser(userId, sessionId) {
 
 
 // TRANSFERÊNCIA
-// TRANSFERÊNCIA (via API — já autenticado pelo middleware)
 async function transferCoins(userId, toId, rawAmount) {
   // 0) no-op if transferring to yourself
   if (userId === toId) {
     return { txId: null, date: null };
+  }
+
+  // NEW: cooldown de 1 segundo entre transfers
+  const lastTx = db
+    .prepare(
+      `SELECT date
+         FROM transactions
+        WHERE from_id = ?
+        ORDER BY date DESC
+        LIMIT 1`
+    )
+    .get(userId);
+  if (lastTx && lastTx.date) {
+    const lastTs = Date.parse(lastTx.date);
+    if (Date.now() - lastTs < 1000) {
+      console.error('Waiting Cooldown');
+      return { txId: null, date: null };
+    }
   }
 
   // 1) convert to integer satoshis
@@ -348,6 +365,7 @@ async function transferCoins(userId, toId, rawAmount) {
 
   return { txId, date };
 }
+
 
 
 

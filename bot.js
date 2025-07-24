@@ -906,7 +906,7 @@ if (cmd === '!pay') {
 
 
 if (cmd === '!check') {
-  const { getTransaction, fromSats } = require('./database');
+  const { getTransaction } = require('./database');
   const path = require('path');
   const fs = require('fs');
   const os = require('os');
@@ -934,12 +934,12 @@ if (cmd === '!check') {
     `Date         : ${tx.date}`,
     `From         : ${tx.fromId}`,
     `To           : ${tx.toId}`,
-    `Amount       : ${fromSats(tx.sats)} coins`
+    `Amount       : ${tx.coins} coins`
   ].join(os.EOL);
   fs.writeFileSync(filePath, content, 'utf8');
 
   // monta texto de resposta
-  const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${fromSats(tx.sats)}\` coins.`;
+  const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${tx.coins}\` coins.`;
 
   // tenta enviar com anexo
   try {
