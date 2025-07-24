@@ -3,7 +3,7 @@ const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
-const { getTransaction, fromSats } = require('../database');
+const { getTransaction } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -16,7 +16,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // Defer to gain extra time (response will be ephemeral)
+    // Defer para ganhar tempo extra (resposta será epheral)
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     const txId = interaction.options.getString('txid');
@@ -32,7 +32,7 @@ module.exports = {
       return interaction.editReply('❌ Unknown transaction.').catch(() => null);
     }
 
-    // Prepare temp directory
+    // Prepara pasta temporária
     const tempDir = path.join(__dirname, '..', 'temp');
     try {
       fs.mkdirSync(tempDir, { recursive: true });
@@ -40,14 +40,14 @@ module.exports = {
       console.warn('⚠️ [/check] Failed to create temp folder:', err);
     }
 
-    // Write transaction details to file
-    const filePath = path.join(tempDir, `${txId}.txt`);
-    const displayAmount = fromSats(tx.amount);
+    // Escreve detalhes da transação em arquivo
+    const filePath      = path.join(tempDir, `${txId}.txt`);
+    const displayAmount = tx.coins;  // valor já formatado em “coins”
     const content = [
       `Transaction ID: ${txId}`,
       `Date         : ${tx.date}`,
-      `From         : ${tx.from_id}`,
-      `To           : ${tx.to_id}`,
+      `From         : ${tx.fromId}`,
+      `To           : ${tx.toId}`,
       `Amount       : ${displayAmount} coins`
     ].join(os.EOL);
 
@@ -57,7 +57,7 @@ module.exports = {
       console.warn('⚠️ [/check] Failed to write transaction file:', err);
     }
 
-    // Create attachment if file exists
+    // Cria o attachment, se o arquivo existir
     let attachment;
     if (fs.existsSync(filePath)) {
       try {
@@ -67,22 +67,20 @@ module.exports = {
       }
     }
 
-    // Prepare reply payload
+    // Monta payload da resposta
     const replyOptions = {
-      content: `✅ Transaction (${tx.date}) from \`${tx.from_id}\` to \`${tx.to_id}\` for \`${displayAmount}\` coins.`
+      content: `✅ Transaction (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` for \`${displayAmount}\` coins.`
     };
-    if (attachment) {
-      replyOptions.files = [attachment];
-    }
+    if (attachment) replyOptions.files = [attachment];
 
-    // Send the response
+    // Envia resposta
     try {
       await interaction.editReply(replyOptions);
     } catch (err) {
       console.error('❌ [/check] Failed to send reply:', err);
     }
 
-    // Clean up temp file
+    // Limpa arquivo temporário
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (err) {
