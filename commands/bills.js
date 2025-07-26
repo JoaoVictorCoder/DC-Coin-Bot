@@ -4,7 +4,7 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 const logic = require('../logic.js');
-const { fromSats } = require('../database');
+// Note: removed fromSats import since we format manually below
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -43,11 +43,12 @@ module.exports = {
     const tempDir = path.join(__dirname, '..', 'temp');
     fs.mkdirSync(tempDir, { recursive: true });
 
+    // Format each bill line, ensuring 8 decimal places for amount
     const lines = bills.map(b => [
       `BILL ID : ${b.id}`,
       `FROM    : ${b.from_id}`,
       `TO      : ${b.to_id}`,
-      `AMOUNT  : ${fromSats(b.amount)} coins`,
+      `AMOUNT  : ${parseFloat(b.amount).toFixed(8)} coins`,
       `DATE    : ${new Date(b.date).toISOString()}`
     ].join(os.EOL));
 
