@@ -1371,7 +1371,7 @@ if (cmd === '!bills') {
       `BILL ID : ${b.id}`,
       `FROM    : ${b.from_id}`,
       `TO      : ${b.to_id}`,
-      `AMOUNT  : ${fromSats(b.amount)} coins`,
+      `AMOUNT  : ${Number(b.amount).toFixed(8)} coins`,
       `DATE    : ${new Date(b.date).toLocaleString()}`
     ].join(os.EOL)
   );
@@ -1406,6 +1406,7 @@ if (cmd === '!bills') {
     try { fs.unlinkSync(filePath); } catch {}
   }
 }
+
 
 
 if (cmd === '!global') {
