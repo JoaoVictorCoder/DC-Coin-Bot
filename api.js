@@ -172,17 +172,11 @@ app.post('/api/register', async (req, res) => {
   // Realiza Transações por API via cartão (não necessita autenticar)
   // POST /api/transfer/card
 app.post('/api/transfer/card', async (req, res) => {
-  // recebe o código puro do cartão em vez do hash
+  // 1) Extrai os parâmetros
   const { cardCode, toId, amount } = req.body || {};
 
-  // 1) Validação básica de parâmetros
-  if (!cardCode || !toId || isNaN(amount)) {
-    return res.status(400).json({ success: false });
-  }
-
-  // 2) Truncamento para 8 casas decimais
-  const { txId, date } = await logic.transferCoins(ownerId, toId, amount);
-  if (isNaN(amt) || amt <= 0) {
+  // 2) Validação básica
+  if (!cardCode || !toId || isNaN(amount) || amount <= 0) {
     return res.status(400).json({ success: false });
   }
 
@@ -193,7 +187,7 @@ app.post('/api/transfer/card', async (req, res) => {
       .update(cardCode)
       .digest('hex');
 
-    // 4) Resolução do usuário proprietário do cartão
+    // 4) Resolve o usuário proprietário do cartão
     const ownerId = getCardOwnerByHash(cardHash);
     if (!ownerId) {
       return res.status(404).json({ success: false });
@@ -206,13 +200,17 @@ app.post('/api/transfer/card', async (req, res) => {
       createUser(toId, null, null);
     }
 
-    // 6) Realiza a transferência (self-transfer retorna txId e date nulos)
-    const { txId, date } = await logic.transferCoins(ownerId, toId, amt);
+    // 6) (Opcional) Trunca para 8 casas decimais
+    const truncated = Math.floor(amount * 1e8) / 1e8;
 
-    // 7) Resposta de êxito
+    // 7) Realiza a transferência de fato
+    const { txId, date } = await logic.transferCoins(ownerId, toId, truncated);
+
+    // 8) Resposta de êxito
     return res.json({ success: true, txId, date });
+
   } catch (err) {
-    // saldo insuficiente ou valor inválido
+    // Saldo insuficiente ou valor inválido
     if (/Invalid amount|Insufficient funds/.test(err.message)) {
       return res.json({ success: false });
     }
@@ -224,25 +222,40 @@ app.post('/api/transfer/card', async (req, res) => {
   // — CLAIM (exige autenticação) —
 app.post('/api/claim', authMiddleware, async (req, res) => {
   try {
-    const result = await logic.claimCoins(req.userId);
-    // { success: true, claimed: X }
-    return res.json(result);
-  } catch (e) {
-    console.error('Claim error:', e);
+    // 1) Verifica cooldown antes de qualquer coisa
+    const lastClaimTs = await logic.getCooldown(req.userId);  // timestamp (ms) do último claim
+    const now         = Date.now();
+    const COOLDOWN_MS = 24 * 60 * 60 * 1000;                  // 24h em ms
 
-    if (e.message === 'Cooldown active') {
-      // calcula tempo restante
-      const last = logic.getCooldown(req.userId);  // timestamp ms do último claim
-      const now  = Date.now();
-      const remainingMs = Math.max(0, last + 24*60*60*1000 - now);
-
+    if (now < lastClaimTs + COOLDOWN_MS) {
+      // Ainda em cooldown: calcula quanto falta
+      const remainingMs = (lastClaimTs + COOLDOWN_MS) - now;
       return res.status(429).json({
-        error: 'Cooldown active',
+        error:         'Cooldown active',
         nextClaimInMs: remainingMs
       });
     }
 
-    // outros erros
+    // 2) Se passou do cooldown, faz o claim normalmente
+    const result = await logic.claimCoins(req.userId);
+    // result: { success: true, claimed: X }
+    return res.json(result);
+
+  } catch (e) {
+    console.error('Claim error:', e);
+
+    // Mantém o mesmo tratamento de erro para caso logic.claimCoins ainda lance 'Cooldown active'
+    if (e.message === 'Cooldown active') {
+      const last      = await logic.getCooldown(req.userId);
+      const now2      = Date.now();
+      const remaining = Math.max(0, (last + 24*60*60*1000) - now2);
+      return res.status(429).json({
+        error:         'Cooldown active',
+        nextClaimInMs: remaining
+      });
+    }
+
+    // Outros erros internos
     return res.status(500).json({ error: 'Internal error' });
   }
 });
