@@ -250,7 +250,7 @@ if (cmd === '!bal') {
     // formata coins (INTEGER satoshis → string "66.00000000")
     const balance = fromSats(user.coins);
 
-    return await message.reply(`> 💰 Saldo: ${balance} coins.`);
+    return await message.reply(`> 💰 Balance: ${balance} coins.`);
   } catch (err) {
     console.error('❌ Error in !bal handler:', err);
     // fallback silencioso
