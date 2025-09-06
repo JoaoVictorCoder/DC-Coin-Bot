@@ -45,7 +45,7 @@ module.exports = {
         default:  cooldownMs = 86_400_000;
       }
     } else {
-      coinsDecimal = 1;
+      coinsDecimal = 0.00000001;
       cooldownMs = 86_400_000;
     }
     const coinsSats = toSats(coinsDecimal.toString());
