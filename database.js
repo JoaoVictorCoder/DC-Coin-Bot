@@ -203,10 +203,8 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS backups (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
     code    TEXT NOT NULL UNIQUE,
-    date    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    userId TEXT NOT NULL
   );
     /* <<< ADICIONE ISSO >>> */
   CREATE TABLE IF NOT EXISTS bills (

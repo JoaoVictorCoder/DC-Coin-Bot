@@ -381,7 +381,7 @@ async function claimCoins(userId) {
   }
 
   // 2) define reward in satoshis
-  const claimSats = toSats('1');
+  const claimSats = toSats('0.00000001');
 
   // 3) grant coins and update cooldown/notified
   addCoins(userId, claimSats);

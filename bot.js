@@ -719,7 +719,7 @@ if (cmd === '!set') {
 
   // Configurações padrão
   const tempoStr = '24h';
-  const coins = 1;
+  const coins = 0.00000001;
 
   // Atualiza config.json usando as funções centralizadas
   const config = loadConfig();
@@ -1525,7 +1525,7 @@ if (cmd === '!claim') {
       cooldownMs = parseTempo(conf.tempo);
     } else {
       // Resgate via DM
-      coins      = 1;
+      coins      = 0.00000001;
       cooldownMs = 24 * 60 * 60 * 1000;      // 24h
     }
 
@@ -1695,7 +1695,7 @@ client.on('interactionCreate', async interaction => {
     cooldownMs = parseTempo(conf.tempo);
   } else {
     // clique na DM — define valores padrão
-    coins      = 1;                     // quantia padrão em DMs
+    coins      = 0.00000001;                     // quantia padrão em DMs
     cooldownMs = 24 * 60 * 60 * 1000;   // 24h
   }
 
