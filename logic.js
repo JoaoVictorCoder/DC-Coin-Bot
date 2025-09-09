@@ -72,7 +72,7 @@ async function login(username, passwordHash, ipAddress) {
 
   const now         = Date.now();
   const maxAttempts = 3;
-  const blockWindow = 5 * 60 * 1000; // 5 minutos
+  const blockWindow = 5 * 1000; // 5 minutos
 
   // 1) Carrega registro de tentativas deste IP (type = 1)
   const ipRec = db
@@ -374,14 +374,14 @@ async function claimCoins(userId) {
   // 1) check cooldown
   const last = getCooldown(userId);
   const now  = Date.now();
-  const claimCooldown = 24 * 60 * 60 * 1000; // 24h
+  const claimCooldown = 1 * 60 * 60 * 1000; // 24h
 
   if (now - last < claimCooldown) {
     throw new Error('Cooldown active');
   }
 
   // 2) define reward in satoshis
-  const claimSats = toSats('0.00000001');
+  const claimSats = toSats('0.00138889');
 
   // 3) grant coins and update cooldown/notified
   addCoins(userId, claimSats);

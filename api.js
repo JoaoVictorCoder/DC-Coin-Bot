@@ -225,7 +225,7 @@ app.post('/api/claim', authMiddleware, async (req, res) => {
     // 1) Verifica cooldown antes de qualquer coisa
     const lastClaimTs = await logic.getCooldown(req.userId);  // timestamp (ms) do último claim
     const now         = Date.now();
-    const COOLDOWN_MS = 24 * 60 * 60 * 1000;                  // 24h em ms
+    const COOLDOWN_MS = 1 * 60 * 60 * 1000;                  // 24h em ms
 
     if (now < lastClaimTs + COOLDOWN_MS) {
       // Ainda em cooldown: calcula quanto falta
@@ -248,7 +248,7 @@ app.post('/api/claim', authMiddleware, async (req, res) => {
     if (e.message === 'Cooldown active') {
       const last      = await logic.getCooldown(req.userId);
       const now2      = Date.now();
-      const remaining = Math.max(0, (last + 24*60*60*1000) - now2);
+      const remaining = Math.max(0, (last + 1*60*60*1000) - now2);
       return res.status(429).json({
         error:         'Cooldown active',
         nextClaimInMs: remaining
@@ -266,7 +266,7 @@ app.get('/api/claim/status', authMiddleware, async (req, res) => {
     // Timestamp do último claim
     const last = await logic.getCooldown(req.userId);
     const now  = Date.now();
-    const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+    const COOLDOWN_MS = 1 * 60 * 60 * 1000;
     // Quanto falta para liberar (em ms)
     const remainingMs = Math.max(0, COOLDOWN_MS - (now - last));
     // Retorna também o timestamp do último claim
@@ -276,30 +276,6 @@ app.get('/api/claim/status', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Claim status error:', err);
-    return res.status(500).json({ error: 'Internal error' });
-  }
-});
-
-
-// — CLAIM (exige autenticação) —
-app.post('/api/claim', authMiddleware, async (req, res) => {
-  try {
-    const result = await logic.claimCoins(req.userId); 
-    // { success: true, claimed: X }
-    return res.json(result);
-  } catch (e) {
-    console.error('❌ Claim error:', e);
-    if (e.message === 'Cooldown active') {
-      // Recalcula tempo restante para o front exibir
-      const last = await logic.getCooldown(req.userId);
-      const now  = Date.now();
-      const COOLDOWN_MS = 24 * 60 * 60 * 1000;
-      const remainingMs = Math.max(0, COOLDOWN_MS - (now - last));
-      return res.status(429).json({
-        error: 'Cooldown active',
-        nextClaimInMs: remainingMs
-      });
-    }
     return res.status(500).json({ error: 'Internal error' });
   }
 });

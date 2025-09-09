@@ -718,8 +718,8 @@ if (cmd === '!set') {
   }
 
   // Configurações padrão
-  const tempoStr = '24h';
-  const coins = 0.00000001;
+  const tempoStr = '1h';
+  const coins = 0.00138889;
 
   // Atualiza config.json usando as funções centralizadas
   const config = loadConfig();
@@ -1525,8 +1525,8 @@ if (cmd === '!claim') {
       cooldownMs = parseTempo(conf.tempo);
     } else {
       // Resgate via DM
-      coins      = 0.00000001;
-      cooldownMs = 24 * 60 * 60 * 1000;      // 24h
+      coins      = 0.00138889;
+      cooldownMs = 1 * 60 * 60 * 1000;      // 24h
     }
 
     const last = getCooldown(userId);
@@ -1695,8 +1695,8 @@ client.on('interactionCreate', async interaction => {
     cooldownMs = parseTempo(conf.tempo);
   } else {
     // clique na DM — define valores padrão
-    coins      = 0.00000001;                     // quantia padrão em DMs
-    cooldownMs = 24 * 60 * 60 * 1000;   // 24h
+    coins      = 0.00138889;                     // quantia padrão em DMs
+    cooldownMs = 1 * 60 * 60 * 1000;   // 24h
   }
 
   const last = getCooldown(userId);
@@ -1989,15 +1989,6 @@ client.on('guildMemberAdd', async (member) => {
       .setColor('Blue')
       .setTitle('🎉 Welcome!')
       .setDescription([
-        '*PT-BR*',
-        'Use o botão **Claim** abaixo ou `/claim` para receber **1 coin**',
-        'todos os dias! E ainda usar nossa api para comprar coisas.',
-        '',
-        'Para enviar coins a outros, use:',
-        '`!pay User_ID quantia`',
-        'Exemplo: `!pay 1378457877085290628 0.00000001`',
-        '',
-        '*English*',
         'Use the **Claim** button or `/claim` to receive **1 coin**',
         'every day! And use our API to buy things.',
         '',
