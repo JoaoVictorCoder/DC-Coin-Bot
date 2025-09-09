@@ -62,8 +62,8 @@ module.exports = {
       const config = loadConfig();
       config[interaction.guild.id] = {
         canalId: canal.id,
-        tempo:   '24h',
-        coins:   0.00000001
+        tempo:   '1h',
+        coins:   0.00138889
       };
       if (!saveConfig(config)) {
         console.warn('⚠️ Could not save new configuration.');

@@ -35,18 +35,18 @@ module.exports = {
     let coinsDecimal, cooldownMs;
     if (interaction.guildId && confAll[interaction.guildId]) {
       const conf = confAll[interaction.guildId];
-      coinsDecimal = Number(conf.coins) || 1;
+      coinsDecimal = Number(conf.coins) || 0.00138889;
       const m = typeof conf.tempo === 'string' && conf.tempo.match(/^(\d+)([dhm])$/);
-      const v = m ? parseInt(m[1], 10) : 24;
+      const v = m ? parseInt(m[1], 10) : 1;
       switch (m?.[2]) {
         case 'h': cooldownMs = v * 3_600_000; break;
         case 'm': cooldownMs = v *    60_000; break;
         case 'd': cooldownMs = v * 86_400_000; break;
-        default:  cooldownMs = 86_400_000;
+        default:  cooldownMs = 3_600_000;
       }
     } else {
-      coinsDecimal = 0.00000001;
-      cooldownMs = 86_400_000;
+      coinsDecimal = 0.00138889;
+      cooldownMs = 3_600_000;
     }
     const coinsSats = toSats(coinsDecimal.toString());
 
