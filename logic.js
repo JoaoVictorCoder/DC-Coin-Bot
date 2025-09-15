@@ -31,6 +31,7 @@ const {
   deleteBill,
   dbGetCooldown,
   toSats,
+  cleanOldTransactions,
   fromSats,
   db
 } = require('./database');
@@ -765,6 +766,13 @@ setInterval(() => {
   // limpa IP-blocks type=2 antigos
   cleanOldIps();
 }, 300 * 1000);
+
+
+// Executa na inicialização do logic
+cleanOldTransactions();
+
+// Opcional: executar a cada 24h
+setInterval(cleanOldTransactions, 1 * 60 * 60 * 1000);
 
 module.exports = {
   authenticate,
