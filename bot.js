@@ -40,7 +40,6 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
@@ -157,9 +156,46 @@ function parseTempo(str) {
 }
 
 
+function ensureGuildDefaults(gid) {
+  try {
+    const config = loadConfig();
+    let changed = false;
+
+    if (!config['0000000000000000']) {
+      config['0000000000000000'] = {
+        canalId: '000000000000',
+        tempo: '1h',
+        coins: 0.00138889
+      };
+      changed = true;
+    }
+
+    if (!config[gid]) {
+      config[gid] = {
+        canalId: '000000000000',
+        tempo: '1h',
+        coins: 0.00138889
+      };
+      changed = true;
+    }
+
+    if (changed) saveConfig(config);
+  } catch (err) {
+    console.error('⚠️ ensureGuildDefaults failed:', err);
+  }
+}
+
+
 
 client.once('ready', () => {
   console.log(`✅ Bot started as ${client.user.tag}`);
+    try {
+    for (const [gid] of client.guilds.cache) {
+      ensureGuildDefaults(gid);
+    }
+  } catch (err) {
+    console.error('⚠️ Backfill ensureGuildDefaults failed:', err);
+  }
 
   // Re-registrar membros a cada 30 minutos
   setInterval(registerAllMembers, 30 * 60 * 1000);
@@ -185,30 +221,31 @@ client.on('guildCreate', async (guild) => {
 > 
 > ⚠️ Be sure that the bot has the right permission to view the channel and send messages & embeds.
 > 
-> All the commands is better with /commands (but !command works)
+> All the commands is better with /commands (but @bot command works)
+> Simply send @Coin to mention the bot, put the command name and the arguments of the command.
 > 
 > 📘 **List of avaliable commands:**
 > 
-> - \`!global\` - shows the economy information.
-> - \`!help\` - shows you the help menu.
-> - \`/ajuda\` - shows you the help menu in portuguese.
-> - \`!user\` - changes your account info.
-> - \`!rank\` — shows the rank of the 25 most rich people.
-> - \`!pay @user ammount\` — example: \`!pay @user 0.01\` to send money.
-> - \`!bal\` — checks your current balance.
-> - \`!bill\` - creates a bill ID to be charged.
-> - \`!bills\` - shows a list of all your bills.
-> - \`!paybill\` - pays a bill ID to send money.
-> - \`!active\` - API usage only.
-> - \`!check\` — checks the ID of a transaction.
-> - \`!history\` — checks your or others transaction history.
-> - \`!card\` — generates a debit card to use in the payment api in other bots.
-> - \`!cardreset\` — resets and gives you another card to keep it safe.
-> - \`!restore\` — restores your wallet backup.
-> - \`!backup\` — creates a wallet backup to restores your coins even if this account got deleted.
-> - \`!view @user\` — example: \`!view @user\` to see another user's balance.
-> - \`!api channel_ID\` — example: \`!api 1324535042843869300\` to create an API channel for the bot.
-> - \`!set channel_ID\` — example: \`!set 1387471903832281219\` to create a ATM and rewards channel.
+> - \`global\` - shows the economy information.
+> - \`help\` - shows you the help menu.
+> - \`ajuda\` - shows you the help menu in portuguese.
+> - \`user\` - changes your account info.
+> - \`rank\` — shows the rank of the 25 most rich people.
+> - \`pay @user ammount\` — example: \`pay @user 0.01\` to send money.
+> - \`bal\` — checks your current balance.
+> - \`bill\` - creates a bill ID to be charged.
+> - \`bills\` - shows a list of all your bills.
+> - \`paybill\` - pays a bill ID to send money.
+> - \`active\` - API usage only.
+> - \`check\` — checks the ID of a transaction.
+> - \`history\` — checks your or others transaction history.
+> - \`card\` — generates a debit card to use in the payment api in other bots.
+> - \`cardreset\` — resets and gives you another card to keep it safe.
+> - \`restore\` — restores your wallet backup.
+> - \`backup\` — creates a wallet backup to restores your coins even if this account got deleted.
+> - \`view @user\` — example: \`view @user\` to see another user's balance.
+> - \`api channel_ID\` — example: \`api 1324535042843869300\` to create an API channel for the bot.
+> - \`set channel_ID\` — example: \`set 1387471903832281219\` to create a ATM and rewards channel.
 > 
 > 💛 Help this project with bitcoins donation. Any help is welcome:
 > \`\`\` bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00 \`\`\`
@@ -235,13 +272,29 @@ client.on('guildCreate', async (guild) => {
   } catch (err) {
     console.error(`Error while handling guildCreate for ${guild.id}:`, err);
   }
+    try {
+    ensureGuildDefaults(guild.id);
+    console.log(`✅ Default config written for guild ${guild.id}`);
+  } catch (err) {
+    console.error('⚠️ ensureGuildDefaults failed:', err);
+  }
 });
 
-client.on('messageCreate', async (message) => {
-  const args = message.content.trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
 
-if (cmd === '!bal') {
+
+client.on('messageCreate', async (message) => {
+  const botMention = `<@${client.user.id}>`;
+  const botMentionNick = `<@!${client.user.id}>`;
+  const content = message.content.trim();
+
+  if (!content.startsWith(botMention) && !content.startsWith(botMentionNick)) return;
+
+  const args = content.split(/\s+/);
+  args.shift(); // remove a menção ao bot
+  const cmd = args.shift()?.toLowerCase();
+
+
+if (cmd === 'bal') {
   try {
     // importa helpers no handler
     const { getUser, fromSats } = require('./database');
@@ -264,7 +317,7 @@ if (cmd === '!bal') {
 
 
 
-if (cmd === '!view') {
+if (cmd === 'view') {
   try {
     // importa helper de formatação
     const { fromSats } = require('./database');
@@ -312,7 +365,7 @@ if (cmd === '!view') {
 
   // === bloco API ===
   // só roda se for dentro de um servidor que já tenha definido um canal “API”
-if (cmd === '!active' && args.length >= 3) {
+if (cmd === 'active') {
   const [ hash, targetId, valorStr ] = args;
   const guild      = message.guild;
   const apiChannel = message.channel;
@@ -441,7 +494,7 @@ if (cmd === '!active' && args.length >= 3) {
 
 
 // --- Handler para !bill ---
-if (cmd === '!bill' && args.length >= 3) {
+if (cmd === 'bill') {
   const [ fromId, toId, amountStr, timeStr ] = args;
   const apiChannel = message.channel;
   const { toSats } = require('./database');
@@ -530,7 +583,7 @@ if (cmd === '!bill' && args.length >= 3) {
 // … dentro do seu client.on('messageCreate', async message => { … } )…
 
 // dentro do seu handler de mensagem
-if (cmd === '!paybill' && args.length >= 1) {
+if (cmd === 'paybill' && args.length >= 1) {
   const billId     = args[0];
   const apiChannel = message.channel;
   const executorId = message.author.id;
@@ -630,27 +683,29 @@ if (cmd === '!paybill' && args.length >= 1) {
 
 
 
-if (cmd === '!help') {
+if (cmd === 'help') {
   const embed = new EmbedBuilder()
     .setColor('#00BFFF')
-    .setTitle('🤖 Comandos disponíveis')
+    .setTitle('🤖 Avaliable Commands')
     .addFields(
-      { name: '💰 Economy',    value: '!bal, !rank, !pay, !paybill, !restore' },
-      { name: '🎁 Rewards',    value: '!set, !claim' },
-      { name: '💸 Commands',   value: '!view, !check, !history, !bills' },
-      { name: '🎓 User',   value: '!user, !backup, !global, !card, !cardreset' },
-      { name: '🆘 Help',       value: '!help' }
+      { name: '💰 Economy',    value: 'bal, rank, pay, paybill, restore' },
+      { name: '🎁 Rewards',    value: 'set, claim' },
+      { name: '💸 Commands',   value: 'view, check, history, bills' },
+      { name: '🎓 User',   value: 'user, backup, global, card, cardreset' },
+      { name: '🆘 Help',       value: 'help' },
+      { name: 'Usage',       value: 'use @bot mention and put the command name and arguments.' },
+      { name: 'Example',       value: '@Coin pay @user 0.001.' }
     );
 
   try {
     return await message.reply({ embeds: [embed] });
   } catch (err) {
-    console.error('❌ Failed to send !help message:', err);
+    console.error('❌ Failed to send help message:', err);
   }
 }
 
 
-if (cmd === '!remind') {
+if (cmd === 'remind') {
   // só o usuário autorizado pode usar
   if (message.author.id !== '1378457877085290628') {
     return message.reply('🚫 No permission.');
@@ -662,7 +717,7 @@ if (cmd === '!remind') {
     try {
       target = await client.users.fetch(args[0]);
     } catch {
-      return message.reply('❌ UUnknown user.');
+      return message.reply('❌ Unknown user.');
     }
   }
   if (!target) {
@@ -693,7 +748,7 @@ if (cmd === '!remind') {
   }
 }
 
-if (cmd === '!set') {
+if (cmd === 'set') {
   const canalId = args[0];
 
   // Uso correto
@@ -770,7 +825,7 @@ if (cmd === '!set') {
 
 
 // dentro de client.on('messageCreate', async message => { … })
-if (cmd === '!api') {
+if (cmd === 'api') {
   const channelId = args[0];
 
   // Uso correto
@@ -812,7 +867,7 @@ if (cmd === '!api') {
 }
 
 
-if (cmd === '!pay') {
+if (cmd === 'pay') {
   try {
     const { toSats, fromSats, getUser, createUser } = require('./database');
 
@@ -905,7 +960,7 @@ if (cmd === '!pay') {
 
 
 
-if (cmd === '!check') {
+if (cmd === 'check') {
   const { getTransaction } = require('./database');
   const path = require('path');
   const fs = require('fs');
@@ -962,7 +1017,7 @@ if (cmd === '!check') {
 
 
   // dentro do seu handler de messageCreate, adicione:
-if (cmd === '!backup') {
+if (cmd === 'backup') {
   const userId = message.author.id;
 
   // 1) verifica saldo
@@ -1029,7 +1084,7 @@ if (cmd === '!backup') {
 
 
 // dentro do seu handler de messageCreate, adicione:
-if (cmd === '!restore' && args.length >= 1) {
+if (cmd === 'restore' && args.length >= 1) {
   const code  = args[0].trim();
   const { getUser } = require('./database');
   const { fromSats } = require('./database');
@@ -1128,7 +1183,7 @@ if (cmd === '!restore' && args.length >= 1) {
 
 
   // no seu index.js ou commands.js, onde você trata comandos de texto:
-if (cmd === '!history') {
+if (cmd === 'history') {
   try {
     const { getUser, fromSats } = require('./database');
     const guild     = message.guild;
@@ -1286,7 +1341,7 @@ if (cmd === '!history') {
 }
 
 
-if (cmd === '!verify') {
+if (cmd === 'verify') {
   const id      = args[0];
   const channel = message.channel;
 
@@ -1330,7 +1385,7 @@ if (cmd === '!verify') {
   return safeReply(`${id}:${found ? 'true' : 'false'}`);
 }
 
-if (cmd === '!bills') {
+if (cmd === 'bills') {
   const { fromSats } = require('./database');
   const channel   = message.channel;
   const guild     = message.guild;
@@ -1409,7 +1464,7 @@ if (cmd === '!bills') {
 
 
 
-if (cmd === '!global') {
+if (cmd === 'global') {
   const channel = message.channel;
   const { fromSats } = require('./database');
 
@@ -1509,7 +1564,7 @@ if (cmd === '!global') {
 
 
 
-if (cmd === '!claim') {
+if (cmd === 'claim') {
   try {
     const userId = message.author.id;
     let coins, cooldownMs;
@@ -1586,7 +1641,7 @@ if (cmd === '!claim') {
 }
 
 
-  if (message.content === '!user') {
+  if (cmd === 'user') {
     try {
       const embed = new EmbedBuilder()
         .setTitle('🏧 Registration 🏧')
@@ -1607,7 +1662,7 @@ if (cmd === '!claim') {
   }
 
 
-if (cmd === '!rank') {
+if (cmd === 'rank') {
   try {
     const { fromSats } = require('./database');
 
