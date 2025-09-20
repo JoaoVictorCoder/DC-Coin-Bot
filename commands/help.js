@@ -20,7 +20,8 @@ module.exports = {
           { name: '🎁 Rewards',   value: '/set, /claim, /global' },
           { name: '💸 Utility',   value: '/view, /remind, /history, /check, /backup, /restore' },
           { name: '📖 API',       value: '/api' },
-          { name: '🆘 Help',      value: '/help & /ajuda' }
+          { name: '🆘 Help',      value: '/help & /ajuda' },
+          { name: 'Extra',       value: 'The commands also works with @Bot mention and the command name: @Coin pay' }
         );
 
       // 3) Send embed

@@ -20,7 +20,7 @@ module.exports = {
 
   async execute(interaction) {
     // 1) Defer to avoid timeout
-    await interaction.deferReply({ ephemeral: true }).catch(() => null);
+    await interaction.deferReply({ ephemeral: false }).catch(() => null);
 
     // 2) Load config safely
     const configFilePath = path.join(__dirname, '..', 'config.json');

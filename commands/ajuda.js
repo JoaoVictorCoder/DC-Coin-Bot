@@ -20,7 +20,8 @@ module.exports = {
           { name: '🎁 Recompensas', value: '/set, /claim, /global' },
           { name: '💸 Utilitários', value: '/view, /remind, /history, /check, /backup, /restore' },
           { name: '📖 API',         value: '/api' },
-          { name: '🆘 Ajuda',       value: '/ajuda, /help' }
+          { name: '🆘 Ajuda',       value: '/ajuda, /help' },
+          { name: 'Extra',       value: 'Também funciona mencionando o bot e usando o nome do comando: @Coin pay' }
         );
 
       // 3) Envia o embed em resposta ephemerally

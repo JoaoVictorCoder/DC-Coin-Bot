@@ -12,7 +12,7 @@ module.exports = {
   async execute(interaction) {
     try {
       // 1) Defer the reply ephemerally to gain extra time
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
 
       // 2) Silently dedupe duplicate transactions
       try {
