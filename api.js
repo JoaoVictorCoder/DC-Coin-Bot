@@ -154,6 +154,18 @@ app.post('/api/register', async (req, res) => {
 });
 
 
+app.get("/api/totalusers", async (req, res) => {
+  try {
+    const total = await logic.getTotalUsers()
+    res.json({ totalUsers: total })
+  } catch (err) {
+    console.error("❌ Erro ao buscar total de usuários:", err)
+    res.status(500).json({ error: "Erro interno ao buscar usuários" })
+  }
+})
+
+
+
   // — TRANSFERIR (exige autenticação) —
   app.post('/api/transfer', authMiddleware, async (req, res) => {
     const { toId, amount } = req.body || {};

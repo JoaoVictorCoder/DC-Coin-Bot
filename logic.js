@@ -27,7 +27,7 @@ const {
   deleteDM,
   genUniqueTxId,
   genUniqueBillId,
-  getBill,
+  getBill, getAllUsers,
   deleteBill,
   dbGetCooldown,
   toSats,
@@ -260,6 +260,7 @@ async function registerUser(username, password, clientIp) {
 
   return userId;
 }
+
 
 // TRANSAÇÕES (paginação)
 async function getTransactions(userId, page = 1) {
@@ -774,10 +775,15 @@ cleanOldTransactions();
 // Opcional: executar a cada 24h
 setInterval(cleanOldTransactions, 1 * 60 * 60 * 1000);
 
+async function getTotalUsers() {
+  const all = getAllUsers()
+  return all.length
+}
+
 module.exports = {
   authenticate,
   login, registerUser,
-  unregisterUser,
+  unregisterUser, getTotalUsers,
   getBillsTo, logoutUser,
   getBillsFrom,
   getUserIdByUsername,
