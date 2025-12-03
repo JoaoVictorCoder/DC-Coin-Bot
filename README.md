@@ -60,7 +60,7 @@
 
       Here is the configurations:
 
-      ```
+```
 ###########################################
 # DISCORD CONFIGURATION
 ###########################################
@@ -142,7 +142,7 @@ RATE_LIMIT_BURST=10
 
 # Tamanho máximo permitido para o JSON do body (default: "1mb")
 REQUEST_BODY_LIMIT=1mb
-      ```
+```
 
 ------
 <h1 align="center">
