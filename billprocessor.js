@@ -1,5 +1,4 @@
 // billprocessor.js
-
 const {
   createBill
 } = require('./database'); // path relative to project root
@@ -17,8 +16,11 @@ module.exports = function setupBillProcessor(client) {
     const fromIdRaw = interaction.fields.getTextInputValue('fromId').trim();
     const amountStr = interaction.fields.getTextInputValue('amount').trim();
     const timeStr   = interaction.fields.getTextInputValue('time').trim();
+
+    // default receiver is the user who opened the modal
     const toId   = toIdRaw || interaction.user.id;
-    const fromId = fromIdRaw || '';
+    // IMPORTANT: default payer is also the user who opened the modal (prevents FK errors)
+    const fromId = fromIdRaw || interaction.user.id;
 
     // 3) Validate amount format
     if (!/^\d+(\.\d+)?$/.test(amountStr)) {
@@ -61,7 +63,8 @@ module.exports = function setupBillProcessor(client) {
     // 6) Create the bill in DB using integer satoshis
     let billId;
     try {
-      billId = createBill(fromId, toId, amountSats, timestamp);
+      // await here is safe whether createBill is sync or async
+      billId = await createBill(fromId, toId, amountSats, timestamp);
     } catch (err) {
       console.warn('⚠️ Error creating bill:', err);
       return interaction.editReply('❌ Could not create bill.');
@@ -72,7 +75,7 @@ module.exports = function setupBillProcessor(client) {
       `✅ Bill created: \`\`\`${billId}\`\`\`\n` +
       `• Amount: **${fromSats(amountSats)}** coins\n` +
       `• Receiver: \`${toId}\`\n` +
-      `• Payer:    \`${fromId || 'unspecified'}\`\n\n` +
+      `• Payer:    \`${fromId}\`\n\n` +
       `Use \`/paybill ${billId}\` to pay it.`
     );
   });

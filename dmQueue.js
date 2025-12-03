@@ -1,5 +1,5 @@
-// dmQueue.js
-const { getNextDM, deleteDM, db } = require('./database');
+// dmQueue.js (corrigido — não acessa db direto)
+const { getNextDM, deleteDM, resetDmQueueSequence } = require('./database');
 const { EmbedBuilder, ActionRowBuilder } = require('discord.js');
 
 let _client;      // aqui guardaremos o client após chamar init()
@@ -15,15 +15,15 @@ async function sendOneDM(job) {
     const embedObj = EmbedBuilder.from(JSON.parse(embed_json));
     const rowObj   = ActionRowBuilder.from(JSON.parse(row_json));
     const payload  = { embeds: [embedObj] };
-    if (rowObj.components.length) payload.components = [rowObj];
+    if (rowObj.components && rowObj.components.length) payload.components = [rowObj];
 
-    // agora usamos _client em vez de client
     const user = await _client.users.fetch(user_id);
     await user.send(payload);
   } catch (err) {
     console.warn(`⚠️ DM failure to ${user_id}: ${err.message}`);
   } finally {
-    deleteDM(id);
+    // garante que a remoção da fila também fica centralizada no database.js
+    try { deleteDM(id); } catch (e) { console.warn('deleteDM failed:', e); }
   }
 }
 
@@ -37,26 +37,29 @@ async function processDMQueue() {
 
   const batchSize = 1;
   let jobs;
-  do {
-    jobs = [];
-    for (let i = 0; i < batchSize; i++) {
-      const job = getNextDM();
-      if (!job) break;
-      jobs.push(job);
-    }
-    for (const job of jobs) {
-      await sendOneDM(job);
-      await new Promise(res => setTimeout(res, 2000));
-    }
-    if (jobs.length === batchSize) {
-      await new Promise(res => setTimeout(res, 2000));
-    }
-  } while (jobs.length === batchSize);
-
   try {
-    db.prepare(`UPDATE sqlite_sequence SET seq = 0 WHERE name='dm_queue'`).run();
-  } catch {}
-  isProcessing = false;
+    do {
+      jobs = [];
+      for (let i = 0; i < batchSize; i++) {
+        const job = getNextDM();
+        if (!job) break;
+        jobs.push(job);
+      }
+      for (const job of jobs) {
+        await sendOneDM(job);
+        await new Promise(res => setTimeout(res, 2000));
+      }
+      if (jobs.length === batchSize) {
+        await new Promise(res => setTimeout(res, 2000));
+      }
+    } while (jobs.length === batchSize);
+  } catch (err) {
+    console.error('❌ dmQueue processing error:', err);
+  } finally {
+    // chama função no database.js para realizar o reset da sequência (se aplicável)
+    try { resetDmQueueSequence(); } catch (e) { /* swallow */ }
+    isProcessing = false;
+  }
 }
 
 // dispara automaticamente

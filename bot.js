@@ -26,6 +26,8 @@ const {
   genUniqueTxId, enqueueDM, getNextDM, deleteDM, createBill
 } = require('./database');
 
+const { getClaimAmount, getClaimWait } = require('./claimConfig');
+
 require('dotenv').config();
 
 const TOKEN     = process.env.DISCORD_TOKEN;
@@ -40,7 +42,6 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
@@ -118,87 +119,13 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-const configFilePath = path.join(__dirname, 'config.json');
-if (!fs.existsSync(configFilePath)) {
-  fs.writeFileSync(configFilePath, JSON.stringify({}, null, 2), 'utf8');
-}
-
-function loadConfig() {
-  try {
-    const raw = fs.readFileSync(configFilePath, 'utf8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('⚠️ Falha ao ler config.json:', err);
-    return {};
-  }
-}
-
-function saveConfig(config) {
-  try {
-    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf8');
-    return true;
-  } catch (err) {
-    console.error('⚠️ Failure while writing config.json:', err);
-    return false;
-  }
-}
-
-function parseTempo(str) {
-  const match = str.match(/(\d+)([dhm])/);
-  if (!match) return 86400000;
-  const valor = parseInt(match[1]);
-  switch (match[2]) {
-    case 'd': return valor * 86400000;
-    case 'h': return valor * 3600000;
-    case 'm': return valor * 60000;
-    default: return 86400000;
-  }
-}
-
-
-function ensureGuildDefaults(gid) {
-  try {
-    const config = loadConfig();
-    let changed = false;
-
-    if (!config['0000000000000000']) {
-      config['0000000000000000'] = {
-        canalId: '000000000000',
-        tempo: '1h',
-        coins: 0.00138889
-      };
-      changed = true;
-    }
-
-    if (!config[gid]) {
-      config[gid] = {
-        canalId: '000000000000',
-        tempo: '1h',
-        coins: 0.00138889
-      };
-      changed = true;
-    }
-
-    if (changed) saveConfig(config);
-  } catch (err) {
-    console.error('⚠️ ensureGuildDefaults failed:', err);
-  }
-}
-
-
 
 client.once('ready', () => {
   console.log(`✅ Bot started as ${client.user.tag}`);
     try {
-    for (const [gid] of client.guilds.cache) {
-      ensureGuildDefaults(gid);
-    }
   } catch (err) {
     console.error('⚠️ Backfill ensureGuildDefaults failed:', err);
   }
-
-  // Re-registrar membros a cada 30 minutos
-  setInterval(registerAllMembers, 30 * 60 * 1000);
 });
 
 client.on('error', error => {
@@ -282,6 +209,9 @@ client.on('guildCreate', async (guild) => {
 
 
 
+// Dentro do seu arquivo principal (onde client é definido)
+// Este bloco substitui o handler existente de messageCreate, usando apenas funções de database.js
+
 client.on('messageCreate', async (message) => {
   const botMention = `<@${client.user.id}>`;
   const botMentionNick = `<@!${client.user.id}>`;
@@ -293,304 +223,254 @@ client.on('messageCreate', async (message) => {
   args.shift(); // remove a menção ao bot
   const cmd = args.shift()?.toLowerCase();
 
-
-if (cmd === 'bal') {
-  try {
-    // importa helpers no handler
-    const { getUser, fromSats } = require('./database');
-    const user = getUser(message.author.id);
-
-    // formata coins (INTEGER satoshis → string "66.00000000")
-    const balance = fromSats(user.coins);
-
-    return await message.reply(`> 💰 Balance: ${balance} coins.`);
-  } catch (err) {
-    console.error('❌ Error in !bal handler:', err);
-    // fallback silencioso
+  // ------------------------------------------------------------
+  // !bal
+  // ------------------------------------------------------------
+  if (cmd === 'bal') {
     try {
-      await message.reply('❌ Falha ao carregar o saldo.');
-    } catch {
-      // nada a fazer se nem isso funcionar
+      const { getUser, fromSats } = require('./database');
+      const user = getUser(message.author.id);
+      const balance = fromSats(user.coins);
+      return await message.reply(`> 💰 Balance: ${balance} coins.`);
+    } catch (err) {
+      console.error('❌ Error in !bal handler:', err);
+      try { await message.reply('❌ Falha ao carregar o saldo.'); } catch {}
     }
   }
-}
 
+  // ------------------------------------------------------------
+  // !view
+  // ------------------------------------------------------------
+  if (cmd === 'view') {
+    try {
+      const { fromSats, getUser } = require('./database');
 
-
-if (cmd === 'view') {
-  try {
-    // importa helper de formatação
-    const { fromSats } = require('./database');
-
-    // 1) Tenta obter o usuário por menção ou ID
-    let target = message.mentions.users.first();
-    if (!target && args[0]) {
-      try {
-        target = await client.users.fetch(args[0]);
-      } catch (err) {
-        console.error('❌ Error fetching user in !view:', err);
-        return await message.reply('❌ Unknown User.');
+      let target = message.mentions.users.first();
+      if (!target && args[0]) {
+        try {
+          target = await client.users.fetch(args[0]);
+        } catch (err) {
+          console.error('❌ Error fetching user in !view:', err);
+          return await message.reply('❌ Unknown User.');
+        }
       }
-    }
-    if (!target) {
-      return await message.reply('❌ Correct usage: `!view @user` or `!view user_id`');
-    }
+      if (!target) {
+        return await message.reply('❌ Correct usage: `!view @user` or `!view user_id`');
+      }
 
-    // 2) Busca os dados no banco com tratamento de erro
-    let record;
-    try {
-      record = getUser(target.id);
+      let record;
+      try {
+        record = getUser(target.id);
+      } catch (err) {
+        console.error('⚠️ Error fetching user record in !view:', err);
+        return await message.reply('❌ Failed to retrieve user data.');
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor('Green')
+        .setTitle(`💼 Saldo de ${target.tag}`)
+        .setDescription(`💰 **${fromSats(record.coins)} coins**`);
+
+      await message.reply({ embeds: [embed] });
+
     } catch (err) {
-      console.error('⚠️ Error fetching user record in !view:', err);
-      return await message.reply('❌ Failed to retrieve user data.');
+      console.error('❌ Unexpected error in !view command:', err);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // !active (API transfer via card hash)
+  // ------------------------------------------------------------
+  if (cmd === 'active') {
+    const [hash, targetId, valorStr] = args;
+
+    const guild      = message.guild;
+    const apiChannel = message.channel;
+    const botMember  = guild?.members.cache.get(client.user.id);
+
+    const {
+      toSats,
+      getUser,
+      createUser,
+      getCardOwnerByHash,
+      transferAtomic
+    } = require('./database');
+
+    // permission check
+    if (guild && !apiChannel.permissionsFor(botMember).has('SendMessages')) {
+      console.warn(`❌ No permission to use API channel in: ${guild.name} (${guild.id})`);
+      return;
     }
 
-    // 3) Prepara e envia o embed
-    const embed = new EmbedBuilder()
-      .setColor('Green')
-      .setTitle(`💼 Saldo de ${target.tag}`)
-      .setDescription(`💰 **${fromSats(record.coins)} coins**`);
-
-    await message.reply({ embeds: [embed] });
-
-  } catch (err) {
-    console.error('❌ Unexpected error in !view command:', err);
-    // já tentou responder, não faz mais nada
-  }
-}
-
-
- // api de transações
-  const guildId = message.guild?.id;
-
-  // === bloco API ===
-  // só roda se for dentro de um servidor que já tenha definido um canal “API”
-if (cmd === 'active') {
-  const [ hash, targetId, valorStr ] = args;
-  const guild      = message.guild;
-  const apiChannel = message.channel;
-  const botMember  = guild?.members.cache.get(client.user.id);
-  const { toSats, getUser, createUser } = require('./database');
-  const { getCardOwnerByHash } = require('./logic');
-
-  // 0) Checa permissão de envio
-  if (guild && !apiChannel.permissionsFor(botMember).has('SendMessages')) {
-    console.warn(`❌ No permission to use API channel at: ${guild.name} (${guild.id})`);
-    return;
-  }
-
-  // 1) valida hash
-  if (!/^[a-f0-9]{64}$/i.test(hash)) {
-    try {
-      await apiChannel.send({
+    // 1) hash válido?
+    if (!/^[a-f0-9]{64}$/i.test(hash)) {
+      return apiChannel.send({
         content: `000000000000:false`,
         reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.error('⚠️ Error sending failure response:', err);
+      }).catch(() => null);
     }
-    return;
-  }
 
-  // 2) valida valor (até 8 casas) e converte para satoshis
-  if (!/^\d+(\.\d{1,8})?$/.test(valorStr)) {
-    try {
-      await apiChannel.send({
+    // 2) valida valor
+    if (!/^\d+(\.\d{1,8})?$/.test(valorStr)) {
+      return apiChannel.send({
         content: `000000000000:false`,
         reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.error('⚠️ Error sending failure response:', err);
+      }).catch(() => null);
     }
-    return;
-  }
-  const amountSats = toSats(valorStr);
-  if (amountSats <= 0) {
-    try {
-      await apiChannel.send({
+
+    const amountSats = toSats(valorStr);
+    if (amountSats <= 0) {
+      return apiChannel.send({
         content: `000000000000:false`,
         reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.error('⚠️ Error sending failure response:', err);
+      }).catch(() => null);
     }
-    return;
-  }
 
-  // 3) busca o dono via hash
-  const ownerId = getCardOwnerByHash(hash);
-  if (!ownerId) {
-    try {
-      await apiChannel.send({
+    // 3) acha dono
+    const ownerId = getCardOwnerByHash(hash);
+    if (!ownerId) {
+      return apiChannel.send({
         content: `000000000000:false`,
         reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.error('⚠️ Error sending failure response:', err);
+      }).catch(() => null);
     }
-    return;
-  }
 
-  // 4) garante que o destinatário exista no banco
-  try {
-    getUser(targetId);
-  } catch {
-    createUser(targetId);
-  }
+    // 4) garante que target exista
+    const exists = getUser(targetId);
+    if (!exists) createUser(targetId);
 
-  const owner = getUser(ownerId);
-  // saldo insuficiente?
-  if (owner.coins < amountSats) {
-    try {
-      await apiChannel.send({
+    const owner = getUser(ownerId);
+
+    // 5) saldo insuficiente
+    if (owner.coins < amountSats) {
+      return apiChannel.send({
         content: `${ownerId}:false`,
         reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.error('⚠️ Error sending insufficient balance response:', err);
+      }).catch(() => null);
     }
-    return;
-  }
 
-  // 5) faz a transferência em satoshis
-  try {
-    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
-      .run(amountSats, ownerId);
-    db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-      .run(amountSats, targetId);
-  } catch (err) {
-    console.error('⚠️ Error updating balances:', err);
-    return;
-  }
+    // 6) transferência segura via database.js
+    try {
+      // transferAtomic garante atomicidade e registra transação(s)
+      transferAtomic(ownerId, targetId, amountSats);
+    } catch (err) {
+      console.error('⚠️ transferAtomic error:', err);
+      return apiChannel.send({
+        content: `${ownerId}:false`,
+        reply: { messageReference: message.id }
+      }).catch(() => null);
+    }
 
-  // 6) registra a transação para owner e receiver
-  const date           = new Date().toISOString();
-  const txIdOwner      = genUniqueTxId();
-  const txIdReceiver   = genUniqueTxId();
-  try {
-    db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?,?,?,?,?)
-    `).run(txIdOwner, date, ownerId, targetId, amountSats);
-    db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?,?,?,?,?)
-    `).run(txIdReceiver, date, ownerId, targetId, amountSats);
-  } catch (err) {
-    console.error('⚠️ Error logging transactions:', err);
-  }
-
-  // 7) responde com sucesso
-  try {
-    await apiChannel.send({
+    // 7) sucesso
+    return apiChannel.send({
       content: `${ownerId}:true`,
       reply: { messageReference: message.id }
-    });
-  } catch (err) {
-    console.error('⚠️ Error sending success response:', err);
-  }
-}
-
-
-
-// --- Handler para !bill ---
-if (cmd === 'bill') {
-  const [ fromId, toId, amountStr, timeStr ] = args;
-  const apiChannel = message.channel;
-  const { toSats } = require('./database');
-
-  // 1) Validação dos IDs
-  if (!/^\d{17,}$/.test(fromId) || !/^\d{17,}$/.test(toId)) {
-    try {
-      await apiChannel.send({
-        content: '❌ Uso correto: !bill <fromId> <toId> <amount> [time]',
-        reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.warn('⚠️ Não foi possível enviar mensagem de uso incorreto:', err);
-    }
-    return;
+    }).catch(() => null);
   }
 
-  // 2) Validação do amount (até 8 casas decimais)
-  const amount = amountStr.trim();
-  if (!/^\d+(\.\d{1,8})?$/.test(amount)) {
-    try {
-      await apiChannel.send({
-        content: '❌ Formato de valor inválido. Até 8 casas decimais.',
-        reply: { messageReference: message.id }
-      });
-    } catch (err) {
-      console.warn('⚠️ Não foi possível enviar mensagem de valor inválido:', err);
-    }
-    return;
-  }
-  const satAmount = toSats(amount);
+  // ------------------------------------------------------------
+  // !bill
+  // ------------------------------------------------------------
+  if (cmd === 'bill') {
+    const [ fromId, toId, amountStr, timeStr ] = args;
+    const apiChannel = message.channel;
+    const { toSats, createBill } = require('./database');
 
-  // 3) Cálculo do timestamp
-  const now = Date.now();
-  let timestamp = now;
-  if (timeStr) {
-    const m = timeStr.match(/^(\d+)([dhms])$/);
-    if (!m) {
+    if (!/^\d{17,}$/.test(fromId) || !/^\d{17,}$/.test(toId)) {
       try {
         await apiChannel.send({
-          content: '❌ Formato de tempo inválido. Use 1d, 2h, 30m ou 45s.',
+          content: '❌ Uso correto: !bill <fromId> <toId> <amount> [time]',
           reply: { messageReference: message.id }
         });
       } catch (err) {
-        console.warn('⚠️ Não foi possível enviar mensagem de tempo inválido:', err);
+        console.warn('⚠️ Não foi possível enviar mensagem de uso incorreto:', err);
       }
       return;
     }
-    const val  = parseInt(m[1], 10);
-    const unit = m[2];
-    let delta;
-    switch (unit) {
-      case 'd': delta = val * MS_IN_DAY;    break;
-      case 'h': delta = val * MS_IN_HOUR;   break;
-      case 'm': delta = val *   MS_IN_MIN;  break;
-      case 's': delta = val *   MS_IN_SEC;  break;
+
+    const amount = amountStr.trim();
+    if (!/^\d+(\.\d{1,8})?$/.test(amount)) {
+      try {
+        await apiChannel.send({
+          content: '❌ Formato de valor inválido. Até 8 casas decimais.',
+          reply: { messageReference: message.id }
+        });
+      } catch (err) {
+        console.warn('⚠️ Não foi possível enviar mensagem de valor inválido:', err);
+      }
+      return;
     }
-    if (delta < MS_IN_HOUR) delta = MS_IN_HOUR;
-    if (delta > SIX_MONTHS) delta = SIX_MONTHS;
-    timestamp = (delta <= NINETY_DAYS)
-      ? now - (NINETY_DAYS - delta)
-      : now + (delta - NINETY_DAYS);
+    const satAmount = toSats(amount);
+
+    const now = Date.now();
+    let timestamp = now;
+    if (timeStr) {
+      const m = timeStr.match(/^(\d+)([dhms])$/);
+      if (!m) {
+        try {
+          await apiChannel.send({
+            content: '❌ Formato de tempo inválido. Use 1d, 2h, 30m ou 45s.',
+            reply: { messageReference: message.id }
+          });
+        } catch (err) {
+          console.warn('⚠️ Não foi possível enviar mensagem de tempo inválido:', err);
+        }
+        return;
+      }
+      const val  = parseInt(m[1], 10);
+      const unit = m[2];
+      let delta;
+      switch (unit) {
+        case 'd': delta = val * MS_IN_DAY;    break;
+        case 'h': delta = val * MS_IN_HOUR;   break;
+        case 'm': delta = val *   MS_IN_MIN;  break;
+        case 's': delta = val *   MS_IN_SEC;  break;
+      }
+      if (delta < MS_IN_HOUR) delta = MS_IN_HOUR;
+      if (delta > SIX_MONTHS) delta = SIX_MONTHS;
+      timestamp = (delta <= NINETY_DAYS)
+        ? now - (NINETY_DAYS - delta)
+        : now + (delta - NINETY_DAYS);
+    }
+
+    // cria bill via database.js
+    let billId;
+    try {
+      billId = createBill(fromId, toId, satAmount, timestamp);
+    } catch (err) {
+      console.warn('⚠️ Bill creation failure:', err);
+      return;
+    }
+
+    try {
+      await apiChannel.send({
+        content: `${fromId}:${billId}`,
+        reply: { messageReference: message.id }
+      });
+    } catch (err) {
+      console.warn('⚠️ Confirmation message sending error:', err);
+    }
   }
 
-  // 4) Criação da bill em DB (amount agora em satoshis)
-  let billId;
-  try {
-    billId = createBill(fromId, toId, satAmount, timestamp);
-  } catch (err) {
-    console.warn('⚠️ Bill creation failure:', err);
-    return;
-  }
-
-  // 5) Resposta de confirmação
-  try {
-    await apiChannel.send({
-      content: `${fromId}:${billId}`,
-      reply: { messageReference: message.id }
-    });
-  } catch (err) {
-    console.warn('⚠️ Confirmation message sending error:', err);
-  }
-}
-
-
-// … dentro do seu client.on('messageCreate', async message => { … } )…
-
-// dentro do seu handler de mensagem
+  // ------------------------------------------------------------
+  // !paybill
+  // ------------------------------------------------------------
+// -----------------------------
+// !paybill (usa transferAtomicWithTxId — registra a transação com o ID da bill)
+// -----------------------------
 if (cmd === 'paybill' && args.length >= 1) {
   const billId     = args[0];
   const apiChannel = message.channel;
   const executorId = message.author.id;
-  const { getUser } = require('./database');
-  const { toSats, fromSats } = require('./database');
+  const {
+    getBill,
+    getUser,
+    transferAtomicWithTxId,
+    deleteBill,
+    enqueueDM,
+    fromSats
+  } = require('./database');
 
-  // helper para responder sem crashar
   const reply = async ok => {
     try {
       await apiChannel.send({
@@ -617,7 +497,7 @@ if (cmd === 'paybill' && args.length >= 1) {
     return reply(false);
   }
 
-  // 3) confere saldo do pagador (user.coins é satoshis)
+  // 3) confere saldo do pagador
   let payer;
   try {
     payer = getUser(executorId);
@@ -625,41 +505,31 @@ if (cmd === 'paybill' && args.length >= 1) {
     console.warn('⚠️ Erro ao buscar executor:', err);
     return reply(false);
   }
-  if (!payer || payer.coins < amountSats) {
+  if (!payer) return reply(false);
+  if (executorId !== bill.to_id && payer.coins < amountSats) {
+    // se não for self-pay e saldo insuficiente
     return reply(false);
   }
 
-  // 4) registra a transação
-  const paidAt = new Date().toISOString();
+  // 4) realiza transferência atômica e registra transação com o mesmo ID da bill
   try {
-    db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?,?,?,?,?)
-    `).run(billId, paidAt, executorId, bill.to_id, amountSats);
+    // transferAtomicWithTxId deve lançar se algo falhar (ex: usuário não encontrado, fundos insuficientes)
+    await transferAtomicWithTxId(executorId, bill.to_id, amountSats, billId);
   } catch (err) {
-    console.warn('⚠️ Erro ao registrar transação:', err);
+    console.warn('⚠️ transferAtomicWithTxId failed in !paybill:', err);
+    return reply(false);
   }
 
-  // 5) deleta a bill
+  // 5) deleta a bill (se a operação acima funcionou)
   try {
     deleteBill(billId);
   } catch (err) {
     console.warn('⚠️ Erro ao deletar bill:', err);
+    // não falha o fluxo — a bill pode ser apagada manualmente depois
   }
 
-  // 6) atualiza saldos se não for self-pay
+  // 6) notifica o destinatário via DM (se não for self-pay)
   if (executorId !== bill.to_id) {
-    try {
-      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
-        .run(amountSats, executorId);
-      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-        .run(amountSats, bill.to_id);
-    } catch (err) {
-      console.warn('⚠️ Erro ao atualizar saldos:', err);
-      return reply(false);
-    }
-
-    // 7) enqueue DM de notificação para o destinatário
     const embedObj = {
       type: 'rich',
       title: '🏦 Bill Paid 🏦',
@@ -677,59 +547,81 @@ if (cmd === 'paybill' && args.length >= 1) {
     }
   }
 
-  // 8) confirma no canal
+  // 7) confirma ao solicitante
   return reply(true);
 }
 
 
+  // ------------------------------------------------------------
+  // !help
+  // ------------------------------------------------------------
+  if (cmd === 'help') {
+    const embed = new EmbedBuilder()
+      .setColor('#00BFFF')
+      .setTitle('🤖 Avaliable Commands')
+      .addFields(
+        { name: '💰 Economy',    value: 'bal, rank, pay, paybill, restore' },
+        { name: '🎁 Rewards',    value: 'set, claim' },
+        { name: '💸 Commands',   value: 'view, check, history, bills' },
+        { name: '🎓 User',   value: 'user, backup, global, card, cardreset' },
+        { name: '🆘 Help',       value: 'help' },
+        { name: 'Usage',       value: 'use @bot mention and put the command name and arguments.' },
+        { name: 'Example',       value: '@Coin pay @user 0.001.' }
+      );
 
-if (cmd === 'help') {
-  const embed = new EmbedBuilder()
-    .setColor('#00BFFF')
-    .setTitle('🤖 Avaliable Commands')
-    .addFields(
-      { name: '💰 Economy',    value: 'bal, rank, pay, paybill, restore' },
-      { name: '🎁 Rewards',    value: 'set, claim' },
-      { name: '💸 Commands',   value: 'view, check, history, bills' },
-      { name: '🎓 User',   value: 'user, backup, global, card, cardreset' },
-      { name: '🆘 Help',       value: 'help' },
-      { name: 'Usage',       value: 'use @bot mention and put the command name and arguments.' },
-      { name: 'Example',       value: '@Coin pay @user 0.001.' }
-    );
-
-  try {
-    return await message.reply({ embeds: [embed] });
-  } catch (err) {
-    console.error('❌ Failed to send help message:', err);
-  }
-}
-
-
-if (cmd === 'remind') {
-  // só o usuário autorizado pode usar
-  if (message.author.id !== '1378457877085290628') {
-    return message.reply('🚫 No permission.');
-  }
-
-  // Tenta obter o usuário por menção ou ID
-  let target = message.mentions.users.first();
-  if (!target && args[0]) {
     try {
-      target = await client.users.fetch(args[0]);
-    } catch {
-      return message.reply('❌ Unknown user.');
+      return await message.reply({ embeds: [embed] });
+    } catch (err) {
+      console.error('❌ Failed to send help message:', err);
     }
   }
-  if (!target) {
-    return message.reply('❌ Use: `!remind @user` or `!remind user_id`');
+
+  // ------------------------------------------------------------
+  // !remind (DM manual)
+  // ------------------------------------------------------------
+// -----------------------------
+// !remind — envia DM com botão para um usuário (aceita @mention ou userId)
+// -----------------------------
+if (cmd === 'remind') {
+  // somente o usuário autorizado pode usar
+  const AUTHORIZED_ID = '1378457877085290628';
+  if (message.author.id !== AUTHORIZED_ID) {
+    try { return await message.reply('🚫 No permission.'); } catch { return; }
   }
 
-  // Monta o embed e botão igual ao checkReminders()
+  // tenta extrair usuário: primeiro por menção, depois por ID bruto
+  let target = message.mentions.users.first();
+
+  if (!target && args[0]) {
+    // aceita formatos: 123456789012345678 ou <@123...> ou <@!123...>
+    const raw = args[0].trim();
+    const mentionMatch = raw.match(/^<@!?(\d+)>$/);
+    const idCandidate = mentionMatch ? mentionMatch[1] : raw;
+
+    if (!/^\d{16,20}$/.test(idCandidate)) {
+      try { return await message.reply('❌ Use: `@bot remind @user` or `@bot remind user_id`'); } catch { return; }
+    }
+
+    try {
+      target = await client.users.fetch(idCandidate);
+    } catch (err) {
+      console.error('❌ Error fetching user in !remind:', err);
+      try { return await message.reply('❌ Unknown user.'); } catch { return; }
+    }
+  }
+
+  if (!target) {
+    try { return await message.reply('❌ Use: `@bot remind @user` or `@bot remind user_id`'); } catch { return; }
+  }
+
+  // monta embed e botão
+  const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+
   const embed = new EmbedBuilder()
     .setColor('Gold')
-    .setTitle('🎁 You have a daily reward avaliable!')
-    .setDescription('Click in the button bellow to receive it.')
-    .setFooter({ text: 'You can claim each 24h.' });
+    .setTitle('🎁 You have a reward avaliable!')
+    .setDescription('Click the button below to receive it.')
+    .setFooter({ text: 'You can always claim.' });
 
   const button = new ButtonBuilder()
     .setCustomId('resgatar')
@@ -738,289 +630,347 @@ if (cmd === 'remind') {
 
   const row = new ActionRowBuilder().addComponents(button);
 
-  // Envia a DM manualmente
+  // envia DM e responde no canal
   try {
     await target.send({ embeds: [embed], components: [row] });
-    message.reply(`✅ Sent to ${target.tag}.`);
+    try { await message.reply(`✅ Sent to ${target.tag}.`); } catch {}
   } catch (err) {
-    console.error(`❌ Dm failure to ${target.id}:`, err);
-    message.reply('⚠️ I could not send messages to that user.');
+    console.error(`❌ DM failure to ${target.id}:`, err);
+    try { await message.reply('⚠️ I could not send messages to that user.'); } catch {}
   }
 }
 
+
+  // ------------------------------------------------------------
+  // !set (config file save, not DB)
+  // ------------------------------------------------------------
+// -----------------------------
+// Text command: @bot set <channel>   (aceita #canal, <#id> ou id puro)
+// Comportamento idêntico ao /set (salva via database API e envia embed com botões)
+// -----------------------------
 if (cmd === 'set') {
-  const canalId = args[0];
+  try {
+    // 1) valida args
+    const raw = args[0];
+    if (!raw) {
+      try { return await message.reply('❌ Correct usage: @Bot set <#channel> or @Bot set <channelId>'); } catch { return; }
+    }
 
-  // Uso correto
-  if (!canalId) {
-    try {
-      return await message.reply('❌ Correct usage: !set channelId');
-    } catch (err) {
-      console.error('❌ Failed to send usage reply in !set:', err);
+    // 2) só em guild
+    if (!message.guild) {
+      try { return await message.reply('❌ This command must be used in a server.'); } catch { return; }
+    }
+
+    // 3) somente dono do servidor
+    if (message.author.id !== message.guild.ownerId) {
+      try { return await message.reply('❌ Only server owner.'); } catch { return; }
       return;
     }
-  }
 
-  // Somente dono do servidor
-  const donoId = message.guild?.ownerId;
-  if (message.author.id !== donoId) {
-    try {
-      return await message.reply('❌ Only server owner.');
-    } catch (err) {
-      console.error('❌ Failed to send owner-only reply in !set:', err);
-      return;
-    }
-  }
+    // 4) resolve o canal: aceita menção de canal, <#id>, id puro
+    let targetChannel = null;
 
-  // Configurações padrão
-  const tempoStr = '1h';
-  const coins = 0.00138889;
-
-  // Atualiza config.json usando as funções centralizadas
-  const config = loadConfig();
-  config[message.guild.id] = { canalId, tempo: tempoStr, coins };
-  if (!saveConfig(config)) {
-    console.warn('⚠️ Impossible to save config.json');
-  }
-
-  // Busca o canal
-  const canal = await client.channels.fetch(canalId).catch(() => null);
-  if (!canal) {
-    try {
-      return await message.reply('❌ Invalid channel ID.');
-    } catch (err) {
-      console.error('❌ Failed to send invalid-channel reply in !set:', err);
-      return;
-    }
-  }
-
-  // Monta botões e embed
-  const botao = new ButtonBuilder()
-    .setCustomId('resgatar')
-    .setLabel('Claim ✅')
-    .setStyle(ButtonStyle.Success);
-  const botaoTransfer = new ButtonBuilder()
-    .setCustomId('atm_transfer')
-    .setLabel('🏦 Transfer')
-    .setStyle(ButtonStyle.Success);
-  const botaoBalance = new ButtonBuilder()
-    .setCustomId('atm_balance')
-    .setLabel('💵 Balance')
-    .setStyle(ButtonStyle.Success);
-
-  const row = new ActionRowBuilder().addComponents(botao, botaoTransfer, botaoBalance);
-  const embed = new EmbedBuilder()
-    .setColor('Gold')
-    .setTitle('🏧 ATM')
-    .setDescription(`Press the claim button below to get **${coins} coin**.\n⏱ Waiting time: **${tempoStr}**`);
-
-  // Tenta enviar no canal sem crashar
-  try {
-    await canal.send({ embeds: [embed], components: [row] });
-  } catch (err) {
-    console.error('❌ Failed to send ATM embed in !set:', err);
-    // não crasha o bot
-  }
-}
-
-
-// dentro de client.on('messageCreate', async message => { … })
-if (cmd === 'api') {
-  const channelId = args[0];
-
-  // Uso correto
-  if (!channelId) {
-    try {
-      await message.reply('❌ Correct usage: !api <channelId>');
-    } catch (err) {
-      console.warn('⚠️ No permission to send API usage message:', err);
-    }
-    return;
-  }
-
-  // Só dono do servidor
-  if (!message.guild) return;
-  const ownerId = message.guild.ownerId;
-  if (message.author.id !== ownerId) {
-    try {
-      await message.reply('❌ Only the server owner can config this.');
-    } catch (err) {
-      console.warn('⚠️ No permission to send owner-only message:', err);
-    }
-    return;
-  }
-
-  // Tenta salvar no banco usando o método do database.js
-  try {
-    await database.setServerApiChannel(message.guild.id, channelId);
-  } catch (err) {
-    console.error('⚠️ API setup error:', err);
-    return;
-  }
-
-  // Confirmação de sucesso
-  try {
-    await message.reply('✅ API channel setup done.');
-  } catch (err) {
-    console.warn('⚠️ No permission to send API channel setup message:', err);
-  }
-}
-
-
-if (cmd === 'pay') {
-  try {
-    const { toSats, fromSats, getUser, createUser } = require('./database');
-
-    // 1) parse & validate target
-    let targetId, targetTag;
-    const mention = message.mentions.users.first();
-    if (mention) {
-      targetId  = mention.id;
-      targetTag = mention.tag;
-    } else if (args[0]) {
-      targetId = args[0];
-      try {
-        const fetched = await client.users.fetch(targetId);
-        targetTag = fetched.tag;
-      } catch {
-        // fallback: exist in DB?
-        const dbUser = getUser(targetId);
-        if (dbUser) {
-          targetTag = `User(${targetId})`;
-        } else {
-          return await message.reply('❌ Usuário desconhecido.');
+    // se mencionou canal diretamente (#channel)
+    if (message.mentions && message.mentions.channels && message.mentions.channels.first()) {
+      targetChannel = message.mentions.channels.first();
+    } else {
+      // tenta extrair <#ID>
+      const m = raw.match(/^<#(\d+)>$/);
+      const maybeId = m ? m[1] : raw;
+      if (/^\d{6,}$/.test(maybeId)) {
+        try {
+          targetChannel = await client.channels.fetch(maybeId);
+        } catch (err) {
+          // ignore, ficará null e enviaremos erro abaixo
+          targetChannel = null;
         }
       }
-    } else {
-      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
     }
 
-    // 2) parse & validate amount, convert to satoshis
-    const amountStr = args[1]?.trim();
-    if (!amountStr || !/^\d+(\.\d{1,8})?$/.test(amountStr) || targetId === message.author.id) {
-      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
-    }
-    const amountSats = toSats(amountStr);
-    if (amountSats <= 0) {
-      return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+    if (!targetChannel) {
+      try { return await message.reply('❌ Invalid channel. Use a channel mention like #channel or provide the channel ID.'); } catch { return; }
     }
 
-    // 3) fetch sender and receiver
-    let sender = getUser(message.author.id);
-    let receiver;
+    // 5) verifica permissão do bot naquele canal
+    const botMember = message.guild.members.cache.get(client.user.id);
+    // canais DM ou webhook-like podem não ter permissionsFor; assume que está ok nesses casos
+    let canSend = true;
     try {
-      receiver = getUser(targetId);
-    } catch {
-      createUser(targetId);
-      receiver = getUser(targetId);
-    }
-
-    if (sender.coins < amountSats) {
-      return await message.reply('💸 Saldo insuficiente.');
-    }
-
-    // 4) update balances (integer satoshis)
-    try {
-      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
-        .run(amountSats, message.author.id);
-      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-        .run(amountSats, targetId);
+      if (typeof targetChannel.permissionsFor === 'function') {
+        const perms = targetChannel.permissionsFor(botMember);
+        canSend = Boolean(perms && perms.has && perms.has('SendMessages'));
+      }
     } catch (err) {
-      console.error('⚠️ Error updating balances in !pay:', err);
-      return await message.reply('❌ Não foi possível completar a transação. Tente mais tarde.');
+      canSend = false;
     }
 
-    // 5) log transactions
-    const date        = new Date().toISOString();
-    const txIdSender   = genUniqueTxId();
-    const txIdReceiver = genUniqueTxId();
+    if (!canSend) {
+      try { return await message.reply('❌ I do not have permission to send messages in the selected channel. Give me Send Messages permission there.'); } catch { return; }
+    }
+
+    // 6) tenta salvar no DB usando API do database.js (não tocar no DB diretamente)
+    const database = require('./database');
+
     try {
-      const stmt = db.prepare(`
-        INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      stmt.run(txIdSender, date, message.author.id, targetId, amountSats);
-      stmt.run(txIdReceiver, date, message.author.id, targetId, amountSats);
-    } catch (err) {
-      console.error('⚠️ Error logging transactions in !pay:', err);
+      if (typeof database.setServerApiChannel === 'function') {
+        await database.setServerApiChannel(message.guild.id, targetChannel.id);
+      } else if (typeof database.setServerClaimChannel === 'function') {
+        await database.setServerClaimChannel(message.guild.id, targetChannel.id);
+      } else if (typeof database.upsertServer === 'function') {
+        await database.upsertServer(message.guild.id, { atm_channel_id: targetChannel.id });
+      } else if (typeof database.updateServer === 'function') {
+        await database.updateServer(message.guild.id, { atm_channel_id: targetChannel.id });
+      } else {
+        // nenhum setter conhecido — avisar no log, mas prosseguir para enviar o embed (não persiste)
+        console.warn('⚠️ No DB setter function found (setServerApiChannel / setServerClaimChannel / upsertServer / updateServer). Configuration will not be persisted.');
+      }
+    } catch (dbErr) {
+      console.error('⚠️ Failed to save ATM channel via database API:', dbErr);
+      try { return await message.reply('❌ Could not save the channel to the database. Check logs.'); } catch { return; }
     }
 
-    // 6) confirmation
-    const sentCoins = fromSats(amountSats);
-    return await message.reply(`✅ Sent **${sentCoins} coins** to **${targetTag}**.`);
+    // 7) prepara botões e embed (mesma aparência do /set)
+    const { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } = require('discord.js');
+
+    const btnClaim = new ButtonBuilder()
+      .setCustomId('resgatar')
+      .setLabel('Claim ✅')
+      .setStyle(ButtonStyle.Success);
+
+    const btnTransfer = new ButtonBuilder()
+      .setCustomId('atm_transfer')
+      .setLabel('🏦 Transfer')
+      .setStyle(ButtonStyle.Secondary);
+
+    const btnBalance = new ButtonBuilder()
+      .setCustomId('atm_balance')
+      .setLabel('💵 Balance')
+      .setStyle(ButtonStyle.Primary);
+
+    const row = new ActionRowBuilder()
+      .addComponents(btnClaim, btnTransfer, btnBalance);
+
+    // 8) extrai valores do claimConfig (mesma lógica do /set)
+    let tempoDisplay = '24h';
+    let coinsDisplay = '0.00000001';
+
+    try {
+      const claimCfg = require('./claimConfig'); // :contentReference[oaicite:2]{index=2}
+      const waitMs = (typeof claimCfg.getClaimWait === 'function') ? claimCfg.getClaimWait() : (claimCfg.CLAIM_WAIT_MS || null);
+      const claimAmount = (typeof claimCfg.getClaimAmount === 'function') ? claimCfg.getClaimAmount() : (claimCfg.CLAIM_AMOUNT || null);
+
+      // formato curto para ms -> s/m/h
+      const formatCooldown = ms => {
+        if (!ms || typeof ms !== 'number' || ms <= 0) return '0s';
+        if (ms < 60_000) {
+          const s = Math.round(ms / 1000); return `${s}s`;
+        }
+        if (ms < 3_600_000) {
+          const m = Math.round(ms / 60_000); return `${m}m`;
+        }
+        const h = Math.round(ms / 3_600_000); return `${h}h`;
+      };
+
+      if (waitMs && !Number.isNaN(Number(waitMs))) {
+        tempoDisplay = formatCooldown(Number(waitMs));
+      } else if (process.env.CLAIM_WAIT_MS) {
+        tempoDisplay = formatCooldown(Number(process.env.CLAIM_WAIT_MS));
+      }
+
+      if (claimAmount !== null && claimAmount !== undefined && !Number.isNaN(Number(claimAmount))) {
+        coinsDisplay = Number(claimAmount).toFixed(8);
+      } else if (process.env.CLAIM_AMOUNT) {
+        coinsDisplay = Number(process.env.CLAIM_AMOUNT).toFixed(8);
+      }
+    } catch (e) {
+      // fallback silencioso - usa defaults definidos acima
+      console.warn('⚠️ Could not read claimConfig for /set display, using defaults.', e);
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('Gold')
+      .setTitle('🏧 ATM')
+      .setDescription(`Press **Claim** to get **${coinsDisplay} coin**.\n⏱ Waiting time: **${tempoDisplay}**`);
+
+    // 9) envia o embed para o canal configurado
+    try {
+      await targetChannel.send({ embeds: [embed], components: [row] });
+    } catch (sendErr) {
+      console.error('⚠️ Error sending ATM embed to target channel:', sendErr);
+      try { return await message.reply('❌ Could not post the ATM embed in the target channel. Check my permissions.'); } catch { return; }
+    }
+
+    // 10) confirma no canal onde o comando foi usado
+    try {
+      await message.reply(`✅ Successfully set ${targetChannel} as your ATM & claim channel.`);
+    } catch (err) {
+      console.warn('⚠️ Failed to send confirmation reply in channel:', err);
+    }
+
   } catch (err) {
-    console.error('❌ Unexpected error in !pay command:', err);
-    try {
-      await message.reply('❌ Erro interno ao processar !pay. Tente novamente mais tarde.');
-    } catch {}
+    console.error('❌ Error in text !set handler:', err);
+    try { await message.reply('❌ Failed to set ATM channel. Please check my permissions and try again.'); } catch {}
   }
 }
 
 
+  // ------------------------------------------------------------
+  // !api (configures server api channel)
+  // ------------------------------------------------------------
+  if (cmd === 'api') {
+    const channelId = args[0];
 
-
-
-if (cmd === 'check') {
-  const { getTransaction } = require('./database');
-  const path = require('path');
-  const fs = require('fs');
-  const os = require('os');
-  const { AttachmentBuilder } = require('discord.js');
-
-  const txId = args[0];
-  if (!txId) {
-    return message.reply('❌ Use: !check <transaction_ID>');
-  }
-
-  // busca no banco
-  const tx = getTransaction(txId);
-  if (!tx) {
-    return message.reply('❌ Unknown transaction.');
-  }
-
-  // prepara diretório temporário
-  const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-  // cria arquivo de comprovante
-  const filePath = path.join(tempDir, `${txId}.txt`);
-  const content = [
-    `Transaction ID: ${tx.id}`,
-    `Date         : ${tx.date}`,
-    `From         : ${tx.fromId}`,
-    `To           : ${tx.toId}`,
-    `Amount       : ${tx.coins} coins`
-  ].join(os.EOL);
-  fs.writeFileSync(filePath, content, 'utf8');
-
-  // monta texto de resposta
-  const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${tx.coins}\` coins.`;
-
-  // tenta enviar com anexo
-  try {
-    const attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
-    await message.reply({ content: replyText, files: [attachment] });
-  } catch (err) {
-    if (err.code === 50013) {
-      console.warn('⚠️ No permission to send the verification ID:', err);
-      await message.reply(`${replyText}\n❌ No permission to send the ID.`);
-    } else {
-      console.error('Unexpected error while sending confirmation txt:', err);
-      await message.reply(`${replyText}\n❌ ID sending failure.`);
+    if (!channelId) {
+      try { await message.reply('❌ Correct usage: !api <channelId>'); } catch (err) { console.warn('⚠️ No permission to send API usage message:', err); }
+      return;
     }
-  } finally {
-    // limpa arquivo temporário
-    try { fs.unlinkSync(filePath); } catch {}
+
+    if (!message.guild) return;
+    const ownerId = message.guild.ownerId;
+    if (message.author.id !== ownerId) {
+      try { await message.reply('❌ Only the server owner can config this.'); } catch (err) { console.warn('⚠️ No permission to send owner-only message:', err); }
+      return;
+    }
+
+    try {
+      const database = require('./database');
+      await database.setServerApiChannel(message.guild.id, channelId);
+    } catch (err) {
+      console.error('⚠️ API setup error:', err);
+      return;
+    }
+
+    try { await message.reply('✅ API channel setup done.'); } catch (err) { console.warn('⚠️ No permission to send API channel setup message:', err); }
   }
-}
 
+  // ------------------------------------------------------------
+  // !pay
+  // ------------------------------------------------------------
+  if (cmd === 'pay') {
+    try {
+      const { toSats, fromSats, getUser, createUser, transferAtomic } = require('./database');
 
+      let targetId, targetTag;
+      const mention = message.mentions.users.first();
+      if (mention) {
+        targetId  = mention.id;
+        targetTag = mention.tag;
+      } else if (args[0]) {
+        targetId = args[0];
+        try {
+          const fetched = await client.users.fetch(targetId);
+          targetTag = fetched.tag;
+        } catch {
+          const dbUser = getUser(targetId);
+          if (dbUser) {
+            targetTag = `User(${targetId})`;
+          } else {
+            return await message.reply('❌ Usuário desconhecido.');
+          }
+        }
+      } else {
+        return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+      }
 
-  // dentro do seu handler de messageCreate, adicione:
+      const amountStr = args[1]?.trim();
+      if (!amountStr || !/^\d+(\.\d{1,8})?$/.test(amountStr) || targetId === message.author.id) {
+        return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+      }
+      const amountSats = toSats(amountStr);
+      if (amountSats <= 0) {
+        return await message.reply('❌ Use: `!pay @user <amount>` (até 8 casas decimais).');
+      }
+
+      let sender = getUser(message.author.id);
+      let receiver;
+      try {
+        receiver = getUser(targetId);
+      } catch {
+        createUser(targetId);
+        receiver = getUser(targetId);
+      }
+
+      if (sender.coins < amountSats) {
+        return await message.reply('💸 Saldo insuficiente.');
+      }
+
+      try {
+        transferAtomic(message.author.id, targetId, amountSats);
+      } catch (err) {
+        console.error('⚠️ Error performing transfer in !pay:', err);
+        return await message.reply('❌ Não foi possível completar a transação. Tente mais tarde.');
+      }
+
+      const sentCoins = fromSats(amountSats);
+      return await message.reply(`✅ Sent **${sentCoins} coins** to **${targetTag}**.`);
+    } catch (err) {
+      console.error('❌ Unexpected error in !pay command:', err);
+      try { await message.reply('❌ Erro interno ao processar !pay. Tente novamente mais tarde.'); } catch {}
+    }
+  }
+
+  // ------------------------------------------------------------
+  // !check
+  // ------------------------------------------------------------
+  if (cmd === 'check') {
+    const { getTransaction } = require('./database');
+    const path = require('path');
+    const fs = require('fs');
+    const os = require('os');
+    const { AttachmentBuilder } = require('discord.js');
+
+    const txId = args[0];
+    if (!txId) {
+      return message.reply('❌ Use: !check <transaction_ID>');
+    }
+
+    const tx = getTransaction(txId);
+    if (!tx) {
+      return message.reply('❌ Unknown transaction.');
+    }
+
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+    const filePath = path.join(tempDir, `${txId}.txt`);
+    const content = [
+      `Transaction ID: ${tx.id}`,
+      `Date         : ${tx.date}`,
+      `From         : ${tx.fromId}`,
+      `To           : ${tx.toId}`,
+      `Amount       : ${tx.coins} coins`
+    ].join(os.EOL);
+    fs.writeFileSync(filePath, content, 'utf8');
+
+    const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${tx.coins}\` coins.`;
+
+    try {
+      const attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
+      await message.reply({ content: replyText, files: [attachment] });
+    } catch (err) {
+      if (err.code === 50013) {
+        console.warn('⚠️ No permission to send the verification ID:', err);
+        await message.reply(`${replyText}\n❌ No permission to send the ID.`);
+      } else {
+        console.error('Unexpected error while sending confirmation txt:', err);
+        await message.reply(`${replyText}\n❌ ID sending failure.`);
+      }
+    } finally {
+      try { fs.unlinkSync(filePath); } catch {}
+    }
+  }
+
+  // ------------------------------------------------------------
+  // !backup
+  // ------------------------------------------------------------
+// -----------------------------
+// !backup (corrigido — usa apenas database.js)
+// -----------------------------
 if (cmd === 'backup') {
   const userId = message.author.id;
+  const { getUser, getBackupCodes, addBackupCode, enqueueDM } = require('./database');
+  const crypto = require('crypto');
 
-  // 1) verifica saldo
   let user;
   try {
     user = getUser(userId);
@@ -1028,29 +978,37 @@ if (cmd === 'backup') {
     console.error('⚠️ Backup failed at getUser:', err);
     return message.reply('❌ Backup failed. Try `!backup`.');
   }
-  if (user.coins <= 0) {
+
+  if (!user || user.coins <= 0) {
     return message.reply('❌ Empty wallet. No codes generated.');
   }
 
-  // 2) gera até 12 códigos
   let codes;
   try {
-    const rows = db.prepare('SELECT code FROM backups WHERE userId = ?').all(userId);
-    codes = rows.map(r => r.code);
+    // Usa getBackupCodes que retorna apenas os códigos existentes (não acessa colunas legacy)
+    codes = getBackupCodes(userId) || [];
+
+    // Gera até 12 códigos, usando addBackupCode para inserir de forma segura
     while (codes.length < 12) {
       const c = crypto.randomBytes(12).toString('hex');
-      db.prepare('INSERT OR IGNORE INTO backups(code, userId) VALUES(?,?)').run(c, userId);
-      codes.push(c);
+
+      // addBackupCode deve retornar true se inseriu, false se já existia/erro
+      const inserted = addBackupCode(userId, c);
+      if (inserted) {
+        codes.push(c);
+      } else {
+        // se não inseriu (colisão ou erro), tenta outro código
+        continue;
+      }
     }
   } catch (err) {
     console.error('⚠️ Backup failed at code generation:', err);
     return message.reply('❌ Backup failed. Try `!backup`.');
   }
 
-  // 3) formata as linhas para o embed da DM
+  // monta mensagem com os códigos
   const codeLines = codes.map(c => `> \`\`\`${c}\`\`\``).join('\n');
 
-  // 4) monta embed para DM
   const dmEmbed = new EmbedBuilder()
     .setColor('Purple')
     .setTitle('🔒 Your Wallet Backup Codes')
@@ -1062,585 +1020,567 @@ if (cmd === 'backup') {
       'Use `/restore <CODE>` to restore.'
     ].join('\n'));
 
-  // 5) enfileira a DM sem anexos
   try {
     enqueueDM(userId, dmEmbed.toJSON(), { components: [] });
-    if (typeof client.processDMQueue === 'function') {
-    }
   } catch (err) {
     console.error('⚠️ I can’t enqueue DM:', err);
     return message.reply('⚠️ I can’t send you DM. Try `!backup`.');
   }
 
-  // 6) confirma no canal apenas informando que a DM foi enfileirada
   try {
     await message.reply('✅ Backup codes generated and sent to your DMs!');
   } catch (err) {
     console.error('⚠️ No permission to reply in channel:', err);
-    // sem crashar
   }
 }
 
 
+  // ------------------------------------------------------------
+  // !restore
+  // ------------------------------------------------------------
+  if (cmd === 'restore' && args.length >= 1) {
+    const code  = args[0].trim();
+    const { getUser, fromSats, getBackupByCode, deleteBackupByCode, transferAtomic } = require('./database');
 
-// dentro do seu handler de messageCreate, adicione:
-if (cmd === 'restore' && args.length >= 1) {
-  const code  = args[0].trim();
-  const { getUser } = require('./database');
-  const { fromSats } = require('./database');
-
-  // 1) Busca backup
-  let row;
-  try {
-    row = db.prepare('SELECT userId FROM backups WHERE code = ?').get(code);
-  } catch (err) {
-    console.error('⚠️ Restore failed at DB lookup:', err);
-    return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
-  }
-  if (!row) {
-    return message.reply('❌ Unknown Code.');
-  }
-
-  const oldId = row.userId;
-  const newId = message.author.id;
-
-  // 2) Mesma conta?
-  if (oldId === newId) {
+    let row;
     try {
-      db.prepare('DELETE FROM backups WHERE code = ?').run(code);
+      row = getBackupByCode(code);
     } catch (err) {
-      console.error('⚠️ Failed to delete self‐restore backup:', err);
+      console.error('⚠️ Restore failed at DB lookup:', err);
+      return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
     }
+    if (!row) {
+      return message.reply('❌ Unknown Code.');
+    }
+
+    const oldId = row.userId;
+    const newId = message.author.id;
+
+    if (oldId === newId) {
+      try { deleteBackupByCode(code); } catch (err) { console.error('⚠️ Failed to delete self‐restore backup:', err); }
+      return message.reply(
+        '❌ You cannot restore backup to the same account.\nUse `/backup` again if you need a fresh code.'
+      );
+    }
+
+    let origin;
+    try {
+      origin = getUser(oldId);
+    } catch (err) {
+      console.error('⚠️ Restore failed at getUser(oldId):', err);
+      return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
+    }
+    const oldBalSats = origin.coins;
+
+    if (oldBalSats <= 0) {
+      try { deleteBackupByCode(code); } catch (err) { console.error('⚠️ Failed to delete empty backup:', err); }
+      return message.reply('❌ Empty wallet—nothing to restore.');
+    }
+
+    try {
+      // transferência atômica via database.js (registra tx, atualiza saldos)
+      transferAtomic(oldId, newId, oldBalSats);
+    } catch (err) {
+      console.error('⚠️ Restore failed at transferAtomic:', err);
+      return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
+    }
+
+    try {
+      deleteBackupByCode(code);
+    } catch (err) {
+      console.error('⚠️ Failed to delete used backup code:', err);
+    }
+
     return message.reply(
-      '❌ You cannot restore backup to the same account.\nUse `/backup` again if you need a fresh code.'
+      `🎉 Backup restored: **${fromSats(oldBalSats)}** coins transferred to your wallet!`
     );
   }
 
-  // 3) Pega saldo antigo (em satoshis)
-  let origin;
-  try {
-    origin = getUser(oldId);
-  } catch (err) {
-    console.error('⚠️ Restore failed at getUser(oldId):', err);
-    return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
-  }
-  const oldBalSats = origin.coins;  // já é INTEGER
-
-  // 4) Carteira vazia?
-  if (oldBalSats <= 0) {
+  // ------------------------------------------------------------
+  // !history
+  // ------------------------------------------------------------
+  if (cmd === 'history') {
     try {
-      db.prepare('DELETE FROM backups WHERE code = ?').run(code);
+      const { getUser, fromSats, getTransactionsForUser, countTransactionsForUser, dedupeUserTransactions } = require('./database');
+      const path = require('path');
+      const fs = require('fs');
+      const os = require('os');
+      const { AttachmentBuilder } = require('discord.js');
+
+      const guild     = message.guild;
+      const channel   = message.channel;
+      const botMember = guild?.members.cache.get(client.user.id);
+
+      const canSend   = !guild || channel.permissionsFor(botMember).has('SendMessages');
+      const canAttach = !guild || channel.permissionsFor(botMember).has('AttachFiles');
+      if (!canSend && !canAttach) {
+        console.warn(`❌ Unable to send messages or attach files in ${channel.id} of ${guild?.name || 'DM'} (${guild?.id || 'no-guild'})!`);
+        return;
+      }
+      if (!canSend) {
+        console.warn('❌ No permission to send messages.');
+        return;
+      }
+
+      const argsLen = args.length;
+      let requestedId = message.author.id;
+      let page        = 1;
+
+      if (argsLen >= 1) {
+        const arg0 = args[0];
+        const mentionMatch = arg0.match(/^<@!?(?<id>\d+)>$/);
+        if (mentionMatch) {
+          requestedId = mentionMatch.groups.id;
+          if (argsLen >= 2 && /^\d+$/.test(args[1])) page = parseInt(args[1], 10);
+        } else if (/^\d{16,}$/.test(arg0)) {
+          requestedId = arg0;
+          if (argsLen >= 2 && /^\d+$/.test(args[1])) page = parseInt(args[1], 10);
+        } else if (/^\d+$/.test(arg0)) {
+          page = parseInt(arg0, 10);
+        }
+      }
+
+      let userRow;
+      try {
+        userRow = getUser(requestedId);
+      } catch (err) {
+        console.error('⚠️ Error fetching user record in !history:', err);
+        return await channel.send('❌ Unknown User.');
+      }
+      if (!userRow) {
+        return await channel.send('❌ Unknown User.');
+      }
+
+      try {
+        dedupeUserTransactions(requestedId);
+      } catch (err) {
+        console.error('⚠️ Failed to remove duplicate transactions:', err);
+      }
+
+      let totalCount;
+      try {
+        totalCount = countTransactionsForUser(requestedId);
+      } catch (err) {
+        console.error('⚠️ Failed to count transactions:', err);
+        return await channel.send('❌ Could not retrieve history.');
+      }
+
+      const perPage = 100;
+      const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
+      if (page > maxPage) page = maxPage;
+
+      let name = 'unknown';
+      try { name = (await client.users.fetch(requestedId)).username; } catch {}
+      const header = [];
+      if (page > maxPage) header.push(`⚠️📖 Showing latest page: ${maxPage}`);
+      header.push(`🔄 User: ${name} (${requestedId})`);
+      header.push(`⏱️ Transactions: ${totalCount}`);
+      header.push(`💸 Balance: ${fromSats(userRow.coins)} coins`);
+      header.push(`📖 Page: ${page}`);
+
+      if (totalCount === 0) {
+        return await channel.send(header.concat('⚠️ No Transactions ⚠️').join('\n'));
+      }
+
+      let transactions = [];
+      try {
+        transactions = getTransactionsForUser(requestedId, perPage, (page - 1) * perPage);
+      } catch (err) {
+        console.error('⚠️ Failed to fetch transactions in !history:', err);
+        return await channel.send('❌ Could not retrieve history.');
+      }
+
+      const blocks = transactions.map(tx => [
+        `UUID:   ${tx.id}`,
+        `AMOUNT: ${fromSats(tx.amount)} coins`,
+        `FROM:   ${tx.from_id}`,
+        `TO:     ${tx.to_id}`,
+        `DATE:   ${tx.date}`
+      ].join(os.EOL));
+      const content = blocks.join(os.EOL + os.EOL);
+
+      const tempDir  = path.join(__dirname, 'temp');
+      const fileName = `${requestedId}_history_${page}.txt`;
+      const filePath = path.join(tempDir, fileName);
+      try {
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+        fs.writeFileSync(filePath, content);
+      } catch (err) {
+        console.error('⚠️ Failed to write history file:', err);
+      }
+
+      try {
+        const sendOptions = { content: header.join('\n') };
+        if (fs.existsSync(filePath)) {
+          sendOptions.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
+        }
+        await channel.send(sendOptions);
+      } catch (err) {
+        if (err.code === 50013) {
+          console.warn('⚠️ No permission to send history file in !history:', err);
+          await channel.send(header.join('\n'));
+        } else {
+          console.error('❌ Error sending !history reply:', err);
+        }
+      } finally {
+        try { fs.unlinkSync(filePath); } catch {}
+      }
+
     } catch (err) {
-      console.error('⚠️ Failed to delete empty backup:', err);
+      console.error('❌ Unexpected error in !history command:', err);
     }
-    return message.reply('❌ Empty wallet—nothing to restore.');
   }
 
-  // 5) Transfere saldo
-  try {
-    // adiciona ao novo usuário
-    db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-      .run(oldBalSats, newId);
-    // zera a carteira antiga
-    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?')
-      .run(oldBalSats, oldId);
-  } catch (err) {
-    console.error('⚠️ Restore failed at balance transfer:', err);
-    return message.reply('❌ Restore failed. Try `/restore <CODE>`.');
+  // ------------------------------------------------------------
+  // !verify
+  // ------------------------------------------------------------
+  if (cmd === 'verify') {
+    const id      = args[0];
+    const channel = message.channel;
+    const { getBill, getTransaction } = require('./database');
+
+    const safeReply = async content => {
+      try { await message.reply({ content, messageReference: message.id }); } catch (err) { console.error('⚠️ !verify reply failed:', err); }
+    };
+
+    if (!id) return safeReply('❌ Use: `!verify <ID>`');
+
+    let isBill = false;
+    try { isBill = !!getBill(id); } catch (err) { console.error('⚠️ Error checking bills in !verify:', err); }
+    if (isBill) return safeReply(`${id}:false`);
+
+    let found = false;
+    try {
+      const tx = getTransaction(id);
+      found = !!tx;
+    } catch (err) {
+      console.error('⚠️ Error querying transactions in !verify:', err);
+    }
+
+    return safeReply(`${id}:${found ? 'true' : 'false'}`);
   }
 
-  // 6) Registra transação(s)
-  const date = new Date().toISOString();
-  try {
-    const txId1 = genUniqueTxId();
-    db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(txId1, date, oldId, newId, oldBalSats);
-
-    const txId2 = genUniqueTxId();
-    db.prepare(`
-      INSERT INTO transactions(id, date, from_id, to_id, amount)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(txId2, date, oldId, newId, oldBalSats);
-  } catch (err) {
-    console.error('⚠️ Failed to log restore transactions:', err);
-    // não aborta: o saldo já foi movido
-  }
-
-  // 7) Remove o código de backup
-  try {
-    db.prepare('DELETE FROM backups WHERE code = ?').run(code);
-  } catch (err) {
-    console.error('⚠️ Failed to delete used backup code:', err);
-  }
-
-  // 8) Confirmação final
-  return message.reply(
-    `🎉 Backup restored: **${fromSats(oldBalSats)}** coins transferred to your wallet!`
-  );
-}
-
-
-  // no seu index.js ou commands.js, onde você trata comandos de texto:
-if (cmd === 'history') {
-  try {
-    const { getUser, fromSats } = require('./database');
-    const guild     = message.guild;
+  // ------------------------------------------------------------
+  // !bills
+  // ------------------------------------------------------------
+  if (cmd === 'bills') {
+    const { fromSats } = require('./database');
     const channel   = message.channel;
+    const guild     = message.guild;
+    const userId    = message.author.id;
     const botMember = guild?.members.cache.get(client.user.id);
 
-    // ⇢ Permissões
     const canSend   = !guild || channel.permissionsFor(botMember).has('SendMessages');
     const canAttach = !guild || channel.permissionsFor(botMember).has('AttachFiles');
-    if (!canSend && !canAttach) {
-      console.warn(`❌ Unable to send messages or attach files in ${channel.id} of ${guild?.name || 'DM'} (${guild?.id || 'no-guild'})!`);
-      return;
-    }
-    if (!canSend) {
-      console.warn('❌ No permission to send messages.');
-      return;
-    }
+    if (!canSend) return;
 
-    // ⇢ Parâmetros: !history [userOrPage] [pageIfUser]
-    const argsLen = args.length;
-    let requestedId = message.author.id;
-    let page        = 1;
-
-    if (argsLen >= 1) {
-      const arg0 = args[0];
-      const mentionMatch = arg0.match(/^<@!?(?<id>\d+)>$/);
-      if (mentionMatch) {
-        requestedId = mentionMatch.groups.id;
-        if (argsLen >= 2 && /^\d+$/.test(args[1])) page = parseInt(args[1], 10);
-      } else if (/^\d{16,}$/.test(arg0)) {
-        requestedId = arg0;
-        if (argsLen >= 2 && /^\d+$/.test(args[1])) page = parseInt(args[1], 10);
-      } else if (/^\d+$/.test(arg0)) {
-        page = parseInt(arg0, 10);
-      }
-    }
-
-    // busca usuário no DB
-    let userRow;
+    let bills;
     try {
-      userRow = getUser(requestedId);
+      // logic.getBillsTo / getBillsFrom - prefer database functions if available
+      const logic = require('./logic');
+      const toPay     = await logic.getBillsTo(userId, 1);
+      const toReceive = await logic.getBillsFrom(userId, 1);
+      bills = [...toPay, ...toReceive];
     } catch (err) {
-      console.error('⚠️ Error fetching user record in !history:', err);
-      return await channel.send('❌ Unknown User.');
-    }
-    if (!userRow) {
-      return await channel.send('❌ Unknown User.');
+      console.error('⚠️ Bills listing failure:', err);
+      return channel.send('❌ Cannot find your bills.');
     }
 
-    // —— remover duplicatas
-    try {
-      db.prepare(`
-        DELETE FROM transactions
-        WHERE rowid NOT IN (
-          SELECT MIN(rowid)
-          FROM transactions
-          WHERE from_id = ? OR to_id = ?
-          GROUP BY date, amount, from_id, to_id
-        )
-        AND (from_id = ? OR to_id = ?)
-      `).run(requestedId, requestedId, requestedId, requestedId);
-    } catch (err) {
-      console.error('⚠️ Failed to remove duplicate transactions:', err);
+    if (bills.length === 0) {
+      return channel.send('ℹ️ You do not have pending bills.');
     }
 
-    // conta total de transações
-    let totalCount;
-    try {
-      const row = db.prepare(
-        `SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = ? OR to_id = ?`
-      ).get(requestedId, requestedId);
-      totalCount = row.cnt;
-    } catch (err) {
-      console.error('⚠️ Failed to count transactions:', err);
-      return await channel.send('❌ Could not retrieve history.');
-    }
+    const os   = require('os');
+    const fs   = require('fs');
+    const path = require('path');
+    const { AttachmentBuilder } = require('discord.js');
 
-    const perPage = 100;
-    const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
-    if (page > maxPage) page = maxPage;
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-    // prepara cabeçalho
-    let name = 'unknown';
-    try {
-      name = (await client.users.fetch(requestedId)).username;
-    } catch {}
-    const header = [];
-    if (page > maxPage) header.push(`⚠️📖 Showing latest page: ${maxPage}`);
-    header.push(`🔄 User: ${name} (${requestedId})`);
-    header.push(`⏱️ Transactions: ${totalCount}`);
-    header.push(`💸 Balance: ${fromSats(userRow.coins)} coins`);
-    header.push(`📖 Page: ${page}`);
+    const lines = bills.map(b =>
+      [
+        `BILL ID : ${b.id}`,
+        `FROM    : ${b.from_id}`,
+        `TO      : ${b.to_id}`,
+        `AMOUNT  : ${Number(b.amount).toFixed(8)} coins`,
+        `DATE    : ${new Date(b.date).toLocaleString()}`
+      ].join(os.EOL)
+    );
+    const content = lines.join(os.EOL + os.EOL);
 
-    if (totalCount === 0) {
-      return await channel.send(header.concat('⚠️ No Transactions ⚠️').join('\n'));
-    }
-
-    // busca transações da página
-    let transactions = [];
-    try {
-      transactions = db.prepare(`
-        SELECT * FROM transactions
-        WHERE from_id = ? OR to_id = ?
-        ORDER BY date DESC
-        LIMIT ? OFFSET ?
-      `).all(requestedId, requestedId, perPage, (page - 1) * perPage);
-    } catch (err) {
-      console.error('⚠️ Failed to fetch transactions in !history:', err);
-      return await channel.send('❌ Could not retrieve history.');
-    }
-
-    // monta conteúdo TXT
-    const blocks = transactions.map(tx => [
-      `UUID:   ${tx.id}`,
-      `AMOUNT: ${fromSats(tx.amount)} coins`,
-      `FROM:   ${tx.from_id}`,
-      `TO:     ${tx.to_id}`,
-      `DATE:   ${tx.date}`
-    ].join(os.EOL));
-    const content = blocks.join(os.EOL + os.EOL);
-
-    // grava em temp e envia com attachment
-    const tempDir  = path.join(__dirname, 'temp');
-    const fileName = `${requestedId}_history_${page}.txt`;
+    const fileName = `${userId}_bills.txt`;
     const filePath = path.join(tempDir, fileName);
-    try {
-      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-      fs.writeFileSync(filePath, content);
-    } catch (err) {
-      console.error('⚠️ Failed to write history file:', err);
-      // prossegue sem anexo
-    }
+
+    try { fs.writeFileSync(filePath, content, 'utf8'); } catch (err) { console.error('⚠️ Bills file creating failure:', err); }
 
     try {
-      const sendOptions = { content: header.join('\n') };
-      if (fs.existsSync(filePath)) {
-        sendOptions.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
+      const payload = {
+        content: `📋 **Your bills (${bills.length}):**\n` +
+          bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
+      };
+      if (canAttach && fs.existsSync(filePath)) {
+        payload.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
       }
-      await channel.send(sendOptions);
+      await channel.send(payload);
     } catch (err) {
-      if (err.code === 50013) {
-        console.warn('⚠️ No permission to send history file in !history:', err);
-        await channel.send(header.join('\n'));
-      } else {
-        console.error('❌ Error sending !history reply:', err);
-      }
+      console.warn('⚠️ Bills file attach failure:', err);
+      await channel.send(
+        `📋 **Your bills (${bills.length}):**\n` +
+        bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
+      );
     } finally {
       try { fs.unlinkSync(filePath); } catch {}
     }
-
-  } catch (err) {
-    console.error('❌ Unexpected error in !history command:', err);
-    // não crashar
-  }
-}
-
-
-if (cmd === 'verify') {
-  const id      = args[0];
-  const channel = message.channel;
-
-  // helper para responder sem travar
-  const safeReply = async content => {
-    try {
-      await message.reply({ content, messageReference: message.id });
-    } catch (err) {
-      console.error('⚠️ !verify reply failed:', err);
-    }
-  };
-
-  // 1) valida sintaxe
-  if (!id) {
-    return safeReply('❌ Use: `!verify <ID>`');
   }
 
-  // 2) ignora se for uma bill
-  let isBill = false;
-  try {
-    isBill = !!getBill(id);
-  } catch (err) {
-    console.error('⚠️ Error checking bills in !verify:', err);
-  }
-  if (isBill) {
-    return safeReply(`${id}:false`);
-  }
-
-  // 3) busca na tabela transactions
-  let found = false;
-  try {
-    const row = db
-      .prepare('SELECT 1 FROM transactions WHERE id = ?')
-      .get(id);
-    found = !!row;
-  } catch (err) {
-    console.error('⚠️ Error querying transactions in !verify:', err);
-  }
-
-  // 4) responde true ou false
-  return safeReply(`${id}:${found ? 'true' : 'false'}`);
-}
-
-if (cmd === 'bills') {
-  const { fromSats } = require('./database');
-  const channel   = message.channel;
-  const guild     = message.guild;
-  const userId    = message.author.id;
-  const botMember = guild?.members.cache.get(client.user.id);
-
-  // 1) Verifica permissão de envio e anexar
-  const canSend   = !guild || channel.permissionsFor(botMember).has('SendMessages');
-  const canAttach = !guild || channel.permissionsFor(botMember).has('AttachFiles');
-  if (!canSend) return;
-
-  // 2) Busca todas as bills “de” e “para” o usuário
-  let bills;
-  try {
-    const toPay     = await logic.getBillsTo(userId, 1);
-    const toReceive = await logic.getBillsFrom(userId, 1);
-    bills = [...toPay, ...toReceive];
-  } catch (err) {
-    console.error('⚠️ Bills listing failure:', err);
-    return channel.send('❌ Cannot find your bills.');
-  }
-
-  if (bills.length === 0) {
-    return channel.send('ℹ️ You do not have pending bills.');
-  }
-
-  // 3) Formata o conteúdo do arquivo
-  const os   = require('os');
-  const fs   = require('fs');
-  const path = require('path');
-  const { AttachmentBuilder } = require('discord.js');
-
-  const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-  const lines = bills.map(b =>
-    [
-      `BILL ID : ${b.id}`,
-      `FROM    : ${b.from_id}`,
-      `TO      : ${b.to_id}`,
-      `AMOUNT  : ${Number(b.amount).toFixed(8)} coins`,
-      `DATE    : ${new Date(b.date).toLocaleString()}`
-    ].join(os.EOL)
-  );
-  const content = lines.join(os.EOL + os.EOL);
-
-  const fileName = `${userId}_bills.txt`;
-  const filePath = path.join(tempDir, fileName);
-
-  try {
-    fs.writeFileSync(filePath, content, 'utf8');
-  } catch (err) {
-    console.error('⚠️ Bills file creating failure:', err);
-  }
-
-  // 4) Envia a mensagem com anexo se possível
-  try {
-    const payload = {
-      content: `📋 **Your bills (${bills.length}):**\n` +
-        bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
-    };
-    if (canAttach && fs.existsSync(filePath)) {
-      payload.files = [ new AttachmentBuilder(filePath, { name: fileName }) ];
-    }
-    await channel.send(payload);
-  } catch (err) {
-    console.warn('⚠️ Bills file attach failure:', err);
-    await channel.send(
-      `📋 **Your bills (${bills.length}):**\n` +
-      bills.map((b, i) => `**${i+1}.** \`${b.id}\``).join('\n')
-    );
-  } finally {
-    try { fs.unlinkSync(filePath); } catch {}
-  }
-}
-
-
-
+  // ------------------------------------------------------------
+  // !global
+  // ------------------------------------------------------------
+// ------------------------------------------------------------
+// !global (corrigido: mostra corretamente o último claim do usuário)
+// ------------------------------------------------------------
 if (cmd === 'global') {
   const channel = message.channel;
-  const { fromSats } = require('./database');
+  const {
+    fromSats,
+    getTotalCoins,
+    getTransactionCount,
+    getClaimCount,
+    getUserCount,
+    getBillCount,
+    getUser,
+    getCooldown,
+    dedupeAllTransactions
+  } = require('./database');
 
-  // 1) Deduplicate all transactions globally
-  try {
-    db.prepare(`
-      DELETE FROM transactions
-      WHERE rowid NOT IN (
-        SELECT MIN(rowid)
-        FROM transactions
-        GROUP BY date, amount, from_id, to_id
-      )
-    `).run();
-  } catch (err) {
-    console.error('⚠️ Failed to remove duplicate transactions globally:', err);
-  }
+  // opcional: arquivo de config para claims
+  let claimCfg = null;
+  try { claimCfg = require('./claimConfig'); } catch { claimCfg = null; }
 
-  // 2) Gather stats
-  let totalCoins   = 0;
-  let totalTx      = 0;
-  let totalClaims  = 0;
-  let totalUsers   = 0;
-  let yourBalance  = 0;
-  let totalBills   = 0;
   try {
-    totalCoins   = db.prepare('SELECT COALESCE(SUM(coins),0) AS sum FROM users').get().sum;
-    totalTx      = db.prepare('SELECT COUNT(*) AS cnt FROM transactions').get().cnt;
-    totalClaims  = db.prepare("SELECT COUNT(*) AS cnt FROM transactions WHERE from_id = '000000000000'").get().cnt;
-    totalUsers   = db.prepare('SELECT COUNT(*) AS cnt FROM users').get().cnt;
-    totalBills   = db.prepare('SELECT COUNT(*) AS cnt FROM bills').get().cnt;
-    yourBalance  = getUser(message.author.id).coins;
-  } catch (err) {
-    console.error('⚠️ Failed to fetch global stats:', err);
+    // tentativa de dedupe global (não-fatal)
+    try { if (typeof dedupeAllTransactions === 'function') dedupeAllTransactions(); } catch (err) { console.warn('⚠️ Global dedupe failed (non-fatal):', err); }
+
+    // estatísticas principais (todas chamadas seguras ao database.js)
+    let totalCoins = 0;
+    let totalTx = 0;
+    let totalClaims = 0;
+    let totalUsers = 0;
+    let yourBalance = 0;
+    let totalBills = 0;
+
     try {
-      return await channel.send('❌ Error retrieving global economy info.');
-    } catch {
-      console.error('❌ Cannot send error message in channel:', err);
-      return;
+      totalCoins = getTotalCoins();
+      totalTx = getTransactionCount();
+      totalClaims = getClaimCount();
+      totalUsers = getUserCount();
+      totalBills = getBillCount();
+      const me = getUser(message.author.id);
+      yourBalance = me ? (me.coins || 0) : 0;
+    } catch (err) {
+      console.error('⚠️ Failed to fetch global stats:', err);
+      try { return await channel.send('❌ Error retrieving global economy info.'); } catch {}
     }
-  }
 
-  // 3) Next reward timing
-  let nextRewardText = 'Unknown';
-  try {
-    const last      = getCooldown(message.author.id);
-    const guildConf = JSON.parse(fs.readFileSync(configFilePath, 'utf8'))[message.guildId] || null;
-    let cooldownMs  = 24 * 60 * 60 * 1000;
-    if (guildConf) {
-      const m = guildConf.tempo.match(/(\d+)([dhm])/);
-      const v = m ? parseInt(m[1], 10) : 24;
-      cooldownMs = m[2] === 'h' ? v * 3600000
-                 : m[2] === 'm' ? v *   60000
-                 :                 v * 86400000;
+    // --- cálculo do próximo reward baseado no último claim armazenado ---
+    let nextRewardText = 'Unknown';
+    try {
+      // 1) pega o último timestamp de claim (getCooldown retorna o valor salvo em users.cooldown)
+      const lastClaimTs = Number(getCooldown(message.author.id) || 0);
+
+      // 2) determina cooldown em ms: prioridade claimConfig -> env -> 24h
+      const DEFAULT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+      let cooldownMs = DEFAULT_COOLDOWN_MS;
+
+      if (claimCfg) {
+        if (typeof claimCfg.getClaimWait === 'function') {
+          const v = claimCfg.getClaimWait();
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0) cooldownMs = n;
+        } else if (typeof claimCfg.CLAIM_WAIT_MS !== 'undefined') {
+          const n = Number(claimCfg.CLAIM_WAIT_MS);
+          if (Number.isFinite(n) && n > 0) cooldownMs = n;
+        }
+      }
+
+      // fallback para env
+      if ((!claimCfg || typeof claimCfg.getClaimWait !== 'function') && process.env.CLAIM_WAIT_MS) {
+        const n = Number(process.env.CLAIM_WAIT_MS);
+        if (Number.isFinite(n) && n > 0) cooldownMs = n;
+      }
+
+      // 3) se não há claim anterior -> disponível agora
+      const now = Date.now();
+      if (!lastClaimTs || lastClaimTs <= 0) {
+        nextRewardText = 'Available now';
+      } else {
+        const elapsed = now - lastClaimTs;
+        if (elapsed >= cooldownMs) {
+          nextRewardText = 'Available now';
+        } else {
+          const diff = cooldownMs - elapsed;
+          const h = Math.floor(diff / 3600000);
+          const m = Math.floor((diff % 3600000) / 60000);
+          const s = Math.floor((diff % 60000) / 1000);
+
+          // formata humanamente
+          const parts = [];
+          if (h > 0) parts.push(`${h}h`);
+          if (m > 0) parts.push(`${m}m`);
+          if (h === 0 && m === 0) parts.push(`${s}s`);
+          nextRewardText = parts.join(' ');
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not compute next reward timing:', err);
+      nextRewardText = 'Unknown';
     }
-    const now = Date.now();
-    if (now - last < cooldownMs) {
-      const diff = cooldownMs - (now - last);
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      nextRewardText = `${h}h ${m}m`;
-    } else {
-      nextRewardText = 'Available now';
-    }
-  } catch {
-    nextRewardText = 'Unknown';
-  }
 
-  // 4) Server count
-  const totalGuilds = client.guilds.cache.size;
+    const totalGuilds = client.guilds.cache.size;
 
-  // 5) Build quoted-style message
-  const lines = [
-    '# 🏆Economy Information 🏆',
-    '',
-    `🌐Global Balance: \`${fromSats(totalCoins)}\` **coins**`,
-    `💰Your Balance: \`${fromSats(yourBalance)}\` coins`,
-    nextRewardText === 'Available now'
-      ? `⏱️Next Reward: 🎉 NOW 🎉`
-      : `⏱️Next Reward: \`${nextRewardText}\`⚠️`,
-    `🏦Servers: \`${totalGuilds}\` servers`,
-    `📖Total Transactions: \`${totalTx}\` transactions`,
-    `💳Total Bills: \`${totalBills}\` bills`,
-    `📨Total Claims: \`${totalClaims}\` claims`,
-    `⭐Coin Users: \`${totalUsers}\` users`,
-    '',
-    '🪙 Oficial Discord Coin System 🪙'
-  ];
-  const messageContent = lines.map(l => `> ${l}`).join('\n');
+    const lines = [
+      '# 🏆Economy Information 🏆',
+      '',
+      `🌐Global Balance: \`${fromSats(totalCoins)}\` **coins**`,
+      `💰Your Balance: \`${fromSats(yourBalance)}\` coins`,
+      nextRewardText === 'Available now'
+        ? `⏱️Next Reward: 🎉 NOW 🎉`
+        : `⏱️Next Reward: \`${nextRewardText}\`⚠️`,
+      `🏦Servers: \`${totalGuilds}\` servers`,
+      `📖Total Transactions: \`${totalTx}\` transactions`,
+      `💳Total Bills: \`${totalBills}\` bills`,
+      `📨Total Claims: \`${totalClaims}\` claims`,
+      `⭐Coin Users: \`${totalUsers}\` users`,
+      '',
+      '🪙 Oficial Discord Coin System 🪙'
+    ];
+    const messageContent = lines.map(l => `> ${l}`).join('\n');
 
-  // 6) Send with error protection
-  try {
-    await channel.send(messageContent);
+    try { await channel.send(messageContent); } catch (err) { console.error('❌ Failed to send !global message:', err); }
   } catch (err) {
-    console.error('❌ Failed to send !global message:', err);
+    console.error('❌ Unexpected error in !global:', err);
   }
 }
 
 
-
+  // ------------------------------------------------------------
+  // !claim
+  // ------------------------------------------------------------
+// ------------------------------------------------------------
+// !claim  (usa claimConfig.js para amount e cooldown, com fallback para process.env)
+// ------------------------------------------------------------
 if (cmd === 'claim') {
   try {
     const userId = message.author.id;
-    let coins, cooldownMs;
+    const db = require('./database');
+    const claimCfg = require('./claimConfig');
 
-    if (message.guild) {
-      // Resgate dentro de um servidor
-      const config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-      const conf   = config[message.guild.id];
-      if (!conf) {
-        return await message.reply('⚠️ No rewards.');
+    // funções do database
+    const { toSats, fromSats, getCooldown, claimReward } = db;
+
+    // --- Obter configuração do claim ---
+    // Prioridade:
+    // 1) claimConfig.getClaimAmount() / claimConfig.getClaimWait()
+    // 2) claimConfig.CLAIM_AMOUNT / claimConfig.CLAIM_WAIT_MS (campos diretos no módulo)
+    // 3) process.env.CLAIM_AMOUNT / process.env.CLAIM_WAIT_MS
+    // 4) fallback padrão
+    const DEFAULT_CLAIM_AMOUNT       = '0.00000001';          // em "coins" (string)
+    const DEFAULT_CLAIM_WAIT_MS      = 24 * 60 * 60 * 1000;  // 24h
+
+    let coinsRaw;
+    try {
+      if (claimCfg && typeof claimCfg.getClaimAmount === 'function') {
+        coinsRaw = claimCfg.getClaimAmount();
+      } else if (claimCfg && (typeof claimCfg.CLAIM_AMOUNT !== 'undefined')) {
+        coinsRaw = claimCfg.CLAIM_AMOUNT;
+      } else if (process.env.CLAIM_AMOUNT) {
+        coinsRaw = process.env.CLAIM_AMOUNT;
+      } else {
+        coinsRaw = DEFAULT_CLAIM_AMOUNT;
       }
-      coins      = conf.coins;               // número de coins (ex: 1)
-      cooldownMs = parseTempo(conf.tempo);
-    } else {
-      // Resgate via DM
-      coins      = 0.00138889;
-      cooldownMs = 1 * 60 * 60 * 1000;      // 24h
+    } catch (err) {
+      console.warn('⚠️ claimConfig.getClaimAmount() failed, falling back:', err);
+      coinsRaw = process.env.CLAIM_AMOUNT || DEFAULT_CLAIM_AMOUNT;
     }
 
-    const last = getCooldown(userId);
-    const now  = Date.now();
+    let cooldownMs;
+    try {
+      if (claimCfg && typeof claimCfg.getClaimWait === 'function') {
+        cooldownMs = claimCfg.getClaimWait();
+      } else if (claimCfg && (typeof claimCfg.CLAIM_WAIT_MS !== 'undefined')) {
+        cooldownMs = Number(claimCfg.CLAIM_WAIT_MS);
+      } else if (process.env.CLAIM_WAIT_MS) {
+        cooldownMs = Number(process.env.CLAIM_WAIT_MS);
+      } else {
+        cooldownMs = DEFAULT_CLAIM_WAIT_MS;
+      }
+    } catch (err) {
+      console.warn('⚠️ claimConfig.getClaimWait() failed, falling back:', err);
+      cooldownMs = Number(process.env.CLAIM_WAIT_MS) || DEFAULT_CLAIM_WAIT_MS;
+    }
+
+    // Normaliza valores
+    const coins = Number.parseFloat(String(coinsRaw));
+    if (!Number.isFinite(coins) || coins <= 0) {
+      console.error('❌ Invalid claim amount from config:', coinsRaw);
+      return message.reply('❌ Claim config inválida. Contate o administrador.');
+    }
+    if (!Number.isFinite(Number(cooldownMs)) || Number(cooldownMs) <= 0) {
+      console.error('❌ Invalid claim cooldown from config:', cooldownMs);
+      return message.reply('❌ Claim cooldown inválido. Contate o administrador.');
+    }
+    cooldownMs = Number(cooldownMs);
+
+    // --- Checar cooldown do usuário ---
+    const last = getCooldown(userId) || 0;
+    const now = Date.now();
+
     if (now - last < cooldownMs) {
       const restante = cooldownMs - (now - last);
       const h = Math.floor(restante / 3600000);
       const m = Math.floor((restante % 3600000) / 60000);
-      return await message.reply(`⏳ Wait more ${h}h ${m}m to claim again.`);
+      const s = Math.floor((restante % 60000) / 1000);
+
+      // Formatação amigável: omite zeros
+      const parts = [];
+      if (h > 0) parts.push(`${h}h`);
+      if (m > 0) parts.push(`${m}m`);
+      if (h === 0 && m === 0) parts.push(`${s}s`);
+      const human = parts.join(' ');
+
+      return await message.reply(`⏳ You must wait ${human} to claim again.`);
     }
 
-    // ① converte o valor em coins para satoshis
-    const amountSats = toSats(coins);
+    // --- Converter e executar claim atômico ---
+    const amountSats = toSats(coins); // converte "coins" (float/string) -> satoshis (INTEGER)
 
-    // ② adiciona sats ao usuário
-    addCoins(userId, amountSats);
-
-    // ③ atualiza cooldown e notificação
-    setCooldown(userId, now);
-    setNotified(userId, false);
-
-    // ④ registra transação de claim (from “zero” para o usuário)
     try {
-      const date = new Date().toISOString();
-      const txId = genUniqueTxId();
-      db.prepare(`
-        INSERT INTO transactions (id, date, from_id, to_id, amount)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(
-        txId,
-        date,
-        '000000000000',  // endereço “zero”
-        userId,
-        amountSats
-      );
+      // claimReward deve ser atômico: adicionar saldo, atualizar cooldown/notified e registrar tx
+      // pode ser sync (better-sqlite3) ou async; usar await é seguro para ambos os casos
+      await claimReward(userId, amountSats);
 
-      // ⑤ exibe ao usuário o valor formatado em coins
-      await message.reply(
-        `🎉 You claimed **${fromSats(amountSats)}** coins successfully!`
-      );
+      // Resposta de sucesso
+      return await message.reply(`🎉 You claimed **${fromSats(amountSats)}** coins successfully!`);
     } catch (err) {
-      console.error('⚠️ Failed to log claim transaction:', err);
-      // ainda passa o valor correto formatado
-      await message.reply(
-        `🎉 You claimed **${fromSats(amountSats)}** coins, but I couldn't log the transaction.`
-      );
+      console.error('⚠️ Failed to execute claimReward:', err);
+      // fallback: tenta dar feedback ao usuário sem quebrar
+      try {
+        return await message.reply(`🎉 You claimed **${fromSats(amountSats)}** coins, but I couldn't log the transaction.`);
+      } catch (sendErr) {
+        console.error('❌ Failed to send claim fallback reply:', sendErr);
+      }
     }
-
   } catch (err) {
     console.error('❌ Command error !claim:', err);
-    try {
-      await message.reply('❌ Error while processing your claim. Try again later.');
-    } catch (sendErr) {
-      console.error('❌ Message sending error while processing !claim:', sendErr);
-    }
+    try { await message.reply('❌ Error while processing your claim. Try again later.'); } catch {}
   }
 }
 
 
+  // ------------------------------------------------------------
+  // !user (sends a register button)
+  // ------------------------------------------------------------
   if (cmd === 'user') {
     try {
       const embed = new EmbedBuilder()
@@ -1650,7 +1590,7 @@ if (cmd === 'claim') {
       const button = new ButtonBuilder()
         .setCustomId('user_register_button')
         .setLabel('Register')
-        .setStyle(ButtonStyle.Secondary); // cinza
+        .setStyle(ButtonStyle.Secondary);
 
       const row = new ActionRowBuilder().addComponents(button);
 
@@ -1661,72 +1601,68 @@ if (cmd === 'claim') {
     }
   }
 
+  // ------------------------------------------------------------
+  // !rank
+  // ------------------------------------------------------------
+  if (cmd === 'rank') {
+    try {
+      const { fromSats, getAllUsers, getUser } = require('./database');
 
-if (cmd === 'rank') {
-  try {
-    const { fromSats } = require('./database');
+      const todos = getAllUsers();
+      const totalAccounts = todos.length;
 
-    // 1) get all accounts
-    const todos = getAllUsers();
-    const totalAccounts = todos.length;
+      const top25 = [...todos]
+        .sort((a, b) => b.coins - a.coins)
+        .slice(0, 25);
 
-    // 2) sort by coins desc, take top 25
-    const top25 = [...todos]
-      .sort((a, b) => b.coins - a.coins)
-      .slice(0, 25);
+      let descricao = '';
+      for (let i = 0; i < top25.length; i++) {
+        const entry = top25[i];
+        const dbRecord = getUser(entry.id);
+        let displayName;
 
-    let descricao = '';
-    // 3) build description
-    for (let i = 0; i < top25.length; i++) {
-      const entry = top25[i];
-      const dbRecord = getUser(entry.id);
-      let displayName;
-
-      if (dbRecord && dbRecord.username) {
-        displayName = dbRecord.username;
-      } else {
-        try {
-          const user = await client.users.fetch(entry.id);
-          displayName = user.tag;
-        } catch {
-          displayName = entry.id;
+        if (dbRecord && dbRecord.username) {
+          displayName = dbRecord.username;
+        } else {
+          try {
+            const user = await client.users.fetch(entry.id);
+            displayName = user.tag;
+          } catch {
+            displayName = entry.id;
+          }
         }
+
+        descricao += `**${i + 1}.** ${displayName} — **${fromSats(entry.coins)} coins**\n`;
       }
 
-      descricao += `**${i + 1}.** ${displayName} — **${fromSats(entry.coins)} coins**\n`;
-    }
+      const totalEconomy = todos.reduce((acc, cur) => acc + cur.coins, 0);
+      descricao += `\n💰 **Global:** ${fromSats(totalEconomy)} **coins**`;
+      descricao += `\n**Total Accounts:** ${totalAccounts} **users**`;
 
-    // 4) total economy
-    const totalEconomy = todos.reduce((acc, cur) => acc + cur.coins, 0);
-    descricao += `\n💰 **Global:** ${fromSats(totalEconomy)} **coins**`;
-    descricao += `\n**Total Accounts:** ${totalAccounts} **users**`;
+      await message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('Blue')
+            .setTitle('🏆 TOP 25')
+            .setDescription(descricao || 'No coin holders yet.')
+        ]
+      });
 
-    // 5) send embed
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor('Blue')
-          .setTitle('🏆 TOP 25')
-          .setDescription(descricao || 'No coin holders yet.')
-      ]
-    });
-
-  } catch (err) {
-    console.error('❌ Command error !rank:', err);
-    try {
-      await message.reply('❌ Error !rank. Try again later.');
-    } catch (sendErr) {
-      console.error('❌ Error sending !rank error message:', sendErr);
+    } catch (err) {
+      console.error('❌ Command error !rank:', err);
+      try { await message.reply('❌ Error !rank. Try again later.'); } catch {}
     }
   }
- }
-});
+
+}); // fim do client.on('messageCreate', ...)
+
 
 
 
 
 
 // 2) Atualize o handler do botão Resgatar para aceitar cliques em DMs ou em servidores:
+// handler de interaction
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton() || interaction.customId !== 'resgatar') return;
 
@@ -1734,57 +1670,54 @@ client.on('interactionCreate', async interaction => {
   if (interaction.replied || interaction.deferred) return;
   await safeDefer(interaction, { flags: 64 });
 
-  const fs = require('fs');
-  const { toSats, fromSats, addCoins, setCooldown, setNotified, getCooldown, genUniqueTxId, db } = require('./database');
-  const userId = interaction.user.id;
-  let coins, cooldownMs;
-
-  if (interaction.guildId) {
-    // clique dentro de um servidor — mantém sua lógica original
-    const config = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-    const conf   = config[interaction.guildId];
-    if (!conf) {
-      return interaction.editReply({ content: '⚠ No claim rewards for this server.' });
-    }
-    coins      = conf.coins;
-    cooldownMs = parseTempo(conf.tempo);
-  } else {
-    // clique na DM — define valores padrão
-    coins      = 0.00138889;                     // quantia padrão em DMs
-    cooldownMs = 1 * 60 * 60 * 1000;   // 24h
-  }
-
-  const last = getCooldown(userId);
-  const now  = Date.now();
-  if (now - last < cooldownMs) {
-    const restante = cooldownMs - (now - last);
-    const h = Math.floor(restante / 3600000);
-    const m = Math.floor((restante % 3600000) / 60000);
-    return interaction.editReply({ content: `⏳ Wait more ${h}h ${m}m to claim again.` });
-  }
-
-  // converte para satoshis e adiciona ao usuário
-  const amountSats = toSats(coins);
-  addCoins(userId, amountSats);
-  setCooldown(userId, now);
-  setNotified(userId, false);
-
-  // registra transação de claim (from zero para o usuário)
   try {
-    const date = new Date().toISOString();
-    const txId = genUniqueTxId();
-    db.prepare(`
-      INSERT INTO transactions (id, date, from_id, to_id, amount)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(txId, date, '000000000000', userId, amountSats);
-  } catch (err) {
-    console.error('⚠️ Failed to log claim transaction:', err);
-  }
+    const userId = interaction.user.id;
 
-  // responde exibindo sempre 8 casas decimais
-  return interaction.editReply({
-    content: `🎉 You claimed **${fromSats(amountSats)}** coins successfully!`
-  });
+    // valores globais da .env
+    const coins = getClaimAmount();    // valor em "coins" (float)
+    const cooldownMs = getClaimWait(); // valor em ms (integer)
+
+    const last = getCooldown(userId) || 0;
+    const now = Date.now();
+
+    if (now - last < cooldownMs) {
+      const restante = cooldownMs - (now - last);
+      const h = Math.floor(restante / 3600000);
+      const m = Math.floor((restante % 3600000) / 60000);
+      return interaction.editReply({ content: `⏳ Wait more ${h}h ${m}m to claim again.` });
+    }
+
+    // converte para satoshis e adiciona ao usuário
+    const amountSats = toSats(coins);
+    addCoins(userId, amountSats);
+    setCooldown(userId, now);
+    setNotified(userId, false);
+
+    // registra transação de claim (from zero para o usuário)
+    try {
+      const date = new Date().toISOString();
+      const txId = genUniqueTxId();
+      db.prepare(`
+        INSERT INTO transactions (id, date, from_id, to_id, amount)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(txId, date, '000000000000', userId, amountSats);
+    } catch (err) {
+      console.error('⚠️ Failed to log claim transaction:', err);
+      // não interrompe o fluxo de resposta ao usuário
+    }
+
+    // responde exibindo o valor em coins formatado
+    return interaction.editReply({
+      content: `🎉 You claimed **${fromSats(amountSats)}** coins successfully!`
+    });
+  } catch (err) {
+    console.error('❌ Error handling resgatar button:', err);
+    try {
+      return interaction.editReply({ content: '❌ Error while processing your claim. Try again later.' });
+    } catch (err2) {
+      console.error('❌ Failed to edit reply after claim error:', err2);
+    }
+  }
 });
 
 
@@ -2104,44 +2037,6 @@ function removeOldBills() {
   } catch (err) {
     console.warn('⚠️ Old bill deleting error:', err);
   }
-}
-
-
-
-
-// Função para registrar apenas usuários novos (que ainda não existem no DB)
-async function registerAllMembers() {
-  console.log('🔄 Initializing the registration of all servers users in the database...');
-
-  // Pega todos os IDs já cadastrados
-  const existingIds = new Set(getAllUsers().map(u => u.id));
-  const guilds = client.guilds.cache;
-  let totalNew = 0;
-  const totalGuilds = guilds.size;
-  const now = 24 * 60 * 60 * 1000 + Date.now();
-
-  for (const guild of guilds.values()) {
-    // Garante que todos os membros estejam no cache
-    await guild.members.fetch();
-
-    guild.members.cache.forEach(member => {
-      const id = member.user.id;
-      // Se já existe, pule
-      if (existingIds.has(id)) return;
-
-      // Caso não exista, cria registro com valores padrão
-      getUser(id);           // insere com default coins=0, cooldown=0, notified=0
-      // se quiser reforçar, pode descomentar:
-      // setCoins(id, 0);
-       setCooldown(id, now);
-      // setNotified(id, false);
-
-      existingIds.add(id);
-      totalNew++;
-    });
-  }
-
-  console.log(`✅ Registred ${totalNew} users in ${totalGuilds} servers.`);
 }
 
 setInterval(removeOldBills, 10 * 60 * 1000);
