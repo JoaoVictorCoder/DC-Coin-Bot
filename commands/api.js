@@ -1,68 +1,73 @@
 // commands/api.js
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { setServerApiChannel } = require('../database');
+const { setServerApiChannel } = require('../database'); // <-- única importação de DB, correto
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('api')
-    .setDescription('Sets the transaction API channel')
+    .setDescription('Define o canal onde a API enviará notificações de transação.')
     .addChannelOption(opt =>
       opt
         .setName('channel')
-        .setDescription('Text channel to receive API messages')
+        .setDescription('Canal de texto para receber mensagens da API')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
-    // defer in case of any delays
+    // Previne timeout
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
     try {
-      // only in a guild
+      // Apenas em servidor
       if (!interaction.guild) {
         return interaction.editReply({
-          content: '❌ This command can only be used in a server.',
+          content: '❌ Este comando só pode ser usado dentro de um servidor.',
         });
       }
 
-      // only the server owner
+      // Apenas dono do servidor
       if (interaction.user.id !== interaction.guild.ownerId) {
         return interaction.editReply({
-          content: '🚫 Only the server owner can configure the API channel.',
+          content: '🚫 Apenas o dono do servidor pode configurar o canal da API.',
         });
       }
 
       const channel = interaction.options.getChannel('channel');
-      // must be a text-based channel
+
+      // Validar canal
       if (!channel || !channel.isTextBased()) {
         return interaction.editReply({
-          content: '❌ Please provide a valid text channel.',
+          content: '❌ Escolha um canal de texto válido.',
         });
       }
 
-      // check bot permissions in that channel
-      const botMember = interaction.guild.members.me || interaction.guild.members.cache.get(interaction.client.user.id);
+      // Validar permissões do bot no canal
+      const botMember =
+        interaction.guild.members.me ??
+        interaction.guild.members.cache.get(interaction.client.user.id);
+
       const perms = channel.permissionsFor(botMember);
       if (!perms || !perms.has(PermissionFlagsBits.SendMessages)) {
         return interaction.editReply({
-          content: '❌ I do not have permission to send messages in that channel.',
+          content: '❌ Eu não tenho permissão para enviar mensagens nesse canal.',
         });
       }
 
-      // store in DB
-      setServerApiChannel(interaction.guild.id, channel.id);
+      // ============================
+      //  ARMAZENA NO database.js
+      // ============================
+      await setServerApiChannel(interaction.guild.id, channel.id);
 
-      // confirmation
       return interaction.editReply({
-        content: `✅ API channel has been set to ${channel}.`,
+        content: `✅ O canal da API foi configurado para ${channel}.`,
       });
     } catch (err) {
-      console.error('❌ Error in /api command:', err);
+      console.error('❌ Erro no comando /api:', err);
       return interaction.editReply({
         content:
-          '❌ An internal error occurred while setting the API channel. Please try again later.',
+          '❌ Ocorreu um erro interno ao configurar o canal da API. Tente novamente mais tarde.',
       });
     }
   },

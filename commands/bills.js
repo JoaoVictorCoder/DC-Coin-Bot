@@ -3,8 +3,8 @@ const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
-const logic = require('../logic.js');
-// Note: removed fromSats import since we format manually below
+// agora usamos apenas database.js para acessar dados
+const { getBillsTo, getBillsFrom } = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,33 +24,45 @@ module.exports = {
     const userId = interaction.user.id;
     const page   = interaction.options.getInteger('page') || 1;
 
-    // Fetch bills to pay and to receive
-    let bills;
+    // Fetch bills to pay and to receive from database.js
+    let bills = [];
     try {
-      const toPay     = await logic.getBillsTo(userId, page);
-      const toReceive = await logic.getBillsFrom(userId, page);
+      const toPay     = Array.isArray(await getBillsTo(userId, page)) ? await getBillsTo(userId, page) : [];
+      const toReceive = Array.isArray(await getBillsFrom(userId, page)) ? await getBillsFrom(userId, page) : [];
       bills = [...toPay, ...toReceive];
     } catch (err) {
-      console.error('⚠️ [/bills] Failed to load bills:', err);
+      console.error('⚠️ [/bills] Failed to load bills from database.js:', err);
       return interaction.editReply('❌ Bills loading error.').catch(() => null);
     }
 
-    if (bills.length === 0) {
+    if (!bills || bills.length === 0) {
       return interaction.editReply('ℹ️ You do not have pending bills.').catch(() => null);
     }
 
     // Prepare temp directory and file
     const tempDir = path.join(__dirname, '..', 'temp');
-    fs.mkdirSync(tempDir, { recursive: true });
+    try { fs.mkdirSync(tempDir, { recursive: true }); } catch (err) { /* ignore */ }
 
-    // Format each bill line, ensuring 8 decimal places for amount
-    const lines = bills.map(b => [
-      `BILL ID : ${b.id}`,
-      `FROM    : ${b.from_id}`,
-      `TO      : ${b.to_id}`,
-      `AMOUNT  : ${parseFloat(b.amount).toFixed(8)} coins`,
-      `DATE    : ${new Date(b.date).toISOString()}`
-    ].join(os.EOL));
+    // Ensure numeric formatting: keep 8 decimal places as original
+    const lines = bills.map(b => {
+      // normalize fields in case DB returns numbers/strings
+      const id     = b.id ?? b.bill_id ?? b.uuid ?? 'unknown';
+      const from   = b.from_id ?? b.from ?? 'unknown';
+      const to     = b.to_id ?? b.to ?? 'unknown';
+      const amount = (typeof b.amount !== 'undefined' && b.amount !== null)
+        ? Number(b.amount).toFixed(8)
+        : '0.00000000';
+      // date fallback
+      const date   = b.date ? new Date(b.date).toISOString() : new Date().toISOString();
+
+      return [
+        `BILL ID : ${id}`,
+        `FROM    : ${from}`,
+        `TO      : ${to}`,
+        `AMOUNT  : ${amount} coins`,
+        `DATE    : ${date}`
+      ].join(os.EOL);
+    });
 
     const content  = lines.join(os.EOL + os.EOL);
     const fileName = `${userId}_bills_${page}.txt`;
@@ -65,12 +77,14 @@ module.exports = {
     // Build reply with attachment
     const reply = {
       content: `📋 **Your bills (${bills.length}):**\n` +
-               bills.map((b, i) => `**${i + 1}.** \`${b.id}\``).join('\n'),
+               bills.map((b, i) => `**${i + 1}.** \`${b.id ?? b.bill_id ?? 'unknown'}\``).join('\n'),
       files: []
     };
 
     try {
-      reply.files.push(new AttachmentBuilder(filePath, { name: fileName }));
+      if (fs.existsSync(filePath)) {
+        reply.files.push(new AttachmentBuilder(filePath, { name: fileName }));
+      }
     } catch (err) {
       console.warn('⚠️ [/bills] AttachmentBuilder failure:', err);
     }
@@ -78,8 +92,6 @@ module.exports = {
     await interaction.editReply(reply).catch(() => null);
 
     // Clean up temp file
-    try {
-      fs.unlinkSync(filePath);
-    } catch {}
+    try { fs.unlinkSync(filePath); } catch {}
   }
 };

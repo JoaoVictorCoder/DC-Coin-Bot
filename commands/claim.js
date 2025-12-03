@@ -1,63 +1,51 @@
 // commands/claim.js
 const { SlashCommandBuilder } = require('discord.js');
-const fs   = require('fs');
-const path = require('path');
 const {
-  addCoins,
   getCooldown,
-  setCooldown,
-  setNotified,
-  db,
-  genUniqueTxId,
   toSats,
-  fromSats
+  fromSats,
+  // agora usamos apenas claimReward do database
+  claimReward
 } = require('../database');
+
+// usa configuração global da .env
+const { getClaimAmount, getClaimWait } = require('../claimConfig');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('claim')
-    .setDescription('Claim your daily reward (like the claim button)'), 
+    .setDescription('Claim your daily reward (like the claim button)'),
 
   async execute(interaction) {
-    // 1) Defer to avoid timeout
+    // 1) Defer para evitar timeout
     await interaction.deferReply({ ephemeral: false }).catch(() => null);
 
-    // 2) Load config safely
-    const configFilePath = path.join(__dirname, '..', 'config.json');
-    let confAll = {};
+    // 2) Determina quantia e cooldown usando .env (globais)
+    let coinsDecimal;
+    let cooldownMs;
     try {
-      confAll = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-    } catch {
-      // ignore, will use defaults
-    }
-
-    // 3) Determine reward amount & cooldown
-    let coinsDecimal, cooldownMs;
-    if (interaction.guildId && confAll[interaction.guildId]) {
-      const conf = confAll[interaction.guildId];
-      coinsDecimal = Number(conf.coins) || 0.00138889;
-      const m = typeof conf.tempo === 'string' && conf.tempo.match(/^(\d+)([dhm])$/);
-      const v = m ? parseInt(m[1], 10) : 1;
-      switch (m?.[2]) {
-        case 'h': cooldownMs = v * 3_600_000; break;
-        case 'm': cooldownMs = v *    60_000; break;
-        case 'd': cooldownMs = v * 86_400_000; break;
-        default:  cooldownMs = 3_600_000;
-      }
-    } else {
+      coinsDecimal = getClaimAmount(); // float (ex: 0.00139998)
+      cooldownMs = getClaimWait();     // ms (ex: 3600000)
+    } catch (err) {
+      console.error('⚠️ [/claim] Failed to load claim config from env:', err);
+      // fallback seguro
       coinsDecimal = 0.00138889;
       cooldownMs = 3_600_000;
     }
-    const coinsSats = toSats(coinsDecimal.toString());
 
-    // 4) Cooldown check
+    // converte para satoshis (inteiro)
+    const coinsSats = toSats(coinsDecimal);
+
+    // 3) Checa cooldown
     const userId = interaction.user.id;
     let last = 0;
     try {
-      last = getCooldown(userId);
-    } catch {
-      // ignore
+      last = getCooldown(userId) || 0;
+    } catch (err) {
+      // ignora: será tratado como sem cooldown
+      last = 0;
     }
+
     const now = Date.now();
     if (now - last < cooldownMs) {
       const remain = cooldownMs - (now - last);
@@ -68,33 +56,18 @@ module.exports = {
         .catch(() => null);
     }
 
-    // 5) Grant coins & update cooldown
+    // 4) Concede coins e registra transação de forma ATÔMICA usando database.claimReward
     try {
-      addCoins(userId, coinsSats);
-      setCooldown(userId, now);
-      setNotified(userId, false);
-    } catch (err) {
-      console.error('❌ [/claim] Failed to update user data:', err);
+      const txInfo = claimReward(userId, coinsSats);
+      // txInfo: { txId, date } retornados por genAndCreateTransaction
       return interaction
-        .editReply('❌ Could not update your balance. Try again later.')
+        .editReply(`🎉 You claimed **${fromSats(coinsSats)} coins** successfully! (tx: ${txInfo.txId})`)
+        .catch(() => null);
+    } catch (err) {
+      console.error('❌ [/claim] claimReward failed:', err);
+      return interaction
+        .editReply('❌ Could not complete claim. Try again later.')
         .catch(() => null);
     }
-
-    // 6) Log the transaction (best effort)
-    try {
-      const date = new Date().toISOString();
-      const txId = genUniqueTxId();
-      db.prepare(
-        `INSERT INTO transactions(id, date, from_id, to_id, amount)
-         VALUES (?, ?, ?, ?, ?)`
-      ).run(txId, date, '000000000000', userId, coinsSats);
-    } catch (err) {
-      console.warn('⚠️ [/claim] Failed to log claim transaction:', err);
-    }
-
-    // 7) Final reply
-    return interaction
-      .editReply(`🎉 You claimed **${fromSats(coinsSats)} coins** successfully!`)
-      .catch(() => null);
   },
 };

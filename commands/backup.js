@@ -1,21 +1,9 @@
 // commands/backup.js
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { getUser, enqueueDM } = require('../database');
-const Database = require('better-sqlite3');
+const { getUser, enqueueDM, getBackupCodes, addBackupCode } = require('../database');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-
-const dbPath = path.join(__dirname, '..', 'playerList', 'database.db');
-const backupsDb = new Database(dbPath);
-
-// Ensure the backups table exists
-backupsDb.prepare(`
-  CREATE TABLE IF NOT EXISTS backups (
-    code   TEXT PRIMARY KEY,
-    userId TEXT NOT NULL
-  )
-`).run();
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,39 +14,48 @@ module.exports = {
     // 1) Defer to avoid the 3s timeout
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    // 2) Fetch user balance
+    // 2) Fetch user balance (support async or sync getUser)
     let user;
     try {
-      user = getUser(interaction.user.id);
+      user = await getUser(interaction.user.id);
     } catch (err) {
       console.error('❌ [/backup] DB error fetching user:', err);
       return interaction.editReply('❌ Could not access your wallet. Try again later.').catch(() => null);
     }
+
+    if (!user || typeof user.coins === 'undefined') {
+      return interaction.editReply('❌ Could not find your wallet.').catch(() => null);
+    }
+
     const balance = user.coins;
     if (balance <= 0) {
       return interaction.editReply('❌ Empty wallet. No backup codes generated.').catch(() => null);
     }
 
-    // 3) Load existing codes
+    // 3) Load existing codes via database.js
     let codes = [];
     try {
-      codes = backupsDb
-        .prepare('SELECT code FROM backups WHERE userId = ?')
-        .all(interaction.user.id)
-        .map(r => r.code);
+      const existing = await getBackupCodes(interaction.user.id);
+      if (Array.isArray(existing)) {
+        codes = existing.slice(0, 12);
+      }
     } catch (err) {
-      console.error('⚠️ [/backup] Failed to load existing codes:', err);
+      console.error('⚠️ [/backup] Failed to load existing codes from database.js:', err);
       // continue to generate new codes
     }
 
-    // 4) Generate until there are 12
+    // 4) Generate until there are 12 (use addBackupCode to persist)
     try {
       while (codes.length < 12) {
         const newCode = crypto.randomBytes(12).toString('hex');
-        backupsDb
-          .prepare('INSERT OR IGNORE INTO backups (code, userId) VALUES (?, ?)')
-          .run(newCode, interaction.user.id);
-        codes.push(newCode);
+        try {
+          // addBackupCode should handle INSERT OR IGNORE semantics
+          await addBackupCode(interaction.user.id, newCode);
+          codes.push(newCode);
+        } catch (innerErr) {
+          // if insertion fails (e.g. duplicate), just continue and try another code
+          console.warn('[/backup] addBackupCode failed for code, retrying:', innerErr);
+        }
       }
     } catch (err) {
       console.error('❌ [/backup] Error generating/inserting codes:', err);

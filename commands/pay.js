@@ -4,23 +4,13 @@ const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { v4: uuidv4 } = require('uuid');
 const {
   getUser,
-  setCoins,
-  db,
   toSats,
-  fromSats
+  fromSats,
+  createUser,
+  transferAtomic
 } = require('../database');
-
-// helper to generate a unique transaction ID
-function genUniqueTxId() {
-  let id;
-  do {
-    id = uuidv4();
-  } while (db.prepare('SELECT 1 FROM transactions WHERE id = ?').get(id));
-  return id;
-}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -61,61 +51,63 @@ module.exports = {
         targetId = dbTargetId;
         const rec = getUser(targetId);
         if (!rec) {
-          return interaction.editReply('❌ Unknown user ID.');
+          return interaction.editReply('❌ Unknown user ID.').catch(() => null);
         }
         targetTag = `User(${targetId})`;
       } else {
-        return interaction.editReply('❌ You must specify a Discord user or a user ID.');
+        return interaction.editReply('❌ You must specify a Discord user or a user ID.').catch(() => null);
       }
 
       // 2) parse & convert amount to satoshis
       const amountDecimal = interaction.options.getNumber('quantia');
+      if (typeof amountDecimal !== 'number' || isNaN(amountDecimal)) {
+        return interaction.editReply('❌ Invalid amount specified.').catch(() => null);
+      }
       const amountSats = toSats(amountDecimal.toString());
-      if (isNaN(amountSats) || amountSats <= 0) {
-        return interaction.editReply('❌ Invalid amount specified.');
+      if (!Number.isInteger(amountSats) || amountSats <= 0) {
+        return interaction.editReply('❌ Invalid amount specified.').catch(() => null);
       }
 
       // 3) prevent self-pay
       if (targetId === interaction.user.id) {
-        return interaction.editReply('🚫 Impossible to send to yourself.');
+        return interaction.editReply('🚫 Impossible to send to yourself.').catch(() => null);
       }
 
-      // 4) fetch balances
+      // 4) fetch balances (getUser cria se não existir)
       const sender = getUser(interaction.user.id);
-      const receiver = getUser(targetId) || { coins: 0 };
-      if (!sender || sender.coins < amountSats) {
-        return interaction.editReply('💸 Insufficient funds.');
+      if (!sender) {
+        return interaction.editReply('❌ Sender account not found.').catch(() => null);
       }
 
-      // 5) compute new balances
-      const newSenderBalance = sender.coins - amountSats;
-      const newReceiverBalance = receiver.coins + amountSats;
+      // create receiver if not exists
+      const receiver = getUser(targetId) || (createUser(targetId), getUser(targetId));
 
-      // 6) apply updates
-      setCoins(interaction.user.id, newSenderBalance);
-      setCoins(targetId, newReceiverBalance);
+      // 5) quick balance check (helpful UX) — detailed check happens inside transferAtomic
+      if (sender.coins < amountSats) {
+        return interaction.editReply('💸 Insufficient funds.').catch(() => null);
+      }
 
-      // 7) log transactions
-      const date = new Date().toISOString();
-      const txSender = genUniqueTxId();
-      const txReceiver = genUniqueTxId();
-      const insert = db.prepare(`
-        INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?, ?, ?, ?, ?)
-      `);
+      // 6) perform atomic transfer via database.js
+      let txInfo;
       try {
-        insert.run(txSender, date, interaction.user.id, targetId, amountSats);
-        insert.run(txReceiver, date, interaction.user.id, targetId, amountSats);
-      } catch (e) {
-        console.warn('⚠️ Failed to log transactions:', e);
+        txInfo = transferAtomic(interaction.user.id, targetId, amountSats);
+        // txInfo = { txId, date }
+      } catch (err) {
+        console.error('⚠️ transferAtomic error:', err);
+        if (/Insufficient funds/i.test(err.message)) {
+          return interaction.editReply('💸 Insufficient funds.').catch(() => null);
+        }
+        return interaction.editReply('❌ Could not complete transfer. Try again later.').catch(() => null);
       }
 
-      // 8) prepare receipt
+      // 7) prepare receipt
+      const date = txInfo?.date || new Date().toISOString();
+      const txId = txInfo?.txId || '(unknown)';
       const tempDir = path.join(__dirname, '..', 'temp');
-      const receiptPath = path.join(tempDir, `${interaction.user.id}-${txSender}.txt`);
+      const receiptPath = path.join(tempDir, `${interaction.user.id}-${txId}.txt`);
       const displayAmount = fromSats(amountSats);
       const receipt = [
-        `Transaction ID: ${txSender}`,
+        `Transaction ID: ${txId}`,
         `Date         : ${date}`,
         `From         : ${interaction.user.id}`,
         `To           : ${targetId}`,
@@ -129,19 +121,19 @@ module.exports = {
         console.warn('⚠️ Could not write receipt file:', e);
       }
 
-      // 9) attach receipt if available
+      // 8) attach receipt if available
       const files = [];
       if (fs.existsSync(receiptPath)) {
         files.push(new AttachmentBuilder(receiptPath, {
-          name: `${interaction.user.id}-${txSender}.txt`
+          name: `${interaction.user.id}-${txId}.txt`
         }));
       }
 
-      // 10) final reply
+      // 9) final reply
       await interaction.editReply({
-        content: `✅ Transferred **${displayAmount} coins** to **${targetTag}**.`,
+        content: `✅ Transferred **${displayAmount} coins** to **${targetTag}**. (tx: ${txId})`,
         files
-      });
+      }).catch(() => null);
     } catch (err) {
       console.error('❌ Error in /pay command:', err);
       try {
@@ -152,7 +144,7 @@ module.exports = {
         }
       } catch {}
     } finally {
-      // 11) cleanup temp files
+      // 10) cleanup temp files
       try {
         const tempDir = path.join(__dirname, '..', 'temp');
         fs.readdirSync(tempDir)

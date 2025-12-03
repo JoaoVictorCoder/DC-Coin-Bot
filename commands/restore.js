@@ -1,17 +1,6 @@
 // commands/restore.js
 const { SlashCommandBuilder } = require('discord.js');
-const Database = require('better-sqlite3');
-const path = require('path');
-const {
-  getUser,
-  addCoins,
-  setCoins,
-  db,
-  genUniqueTxId
-} = require('../database');
-
-// use the same database file that holds backups
-const backupsDb = new Database(path.join(__dirname, '..', 'playerList', 'database.db'));
+const database = require('../database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,97 +13,82 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    // 1) defer to buy time
     await interaction.deferReply({ ephemeral: true }).catch(() => null);
 
-    const code = interaction.options.getString('code').trim();
-    let row;
+    const code = interaction.options.getString('code')?.trim();
+    if (!code) return interaction.editReply('❌ Please provide a backup code.').catch(() => null);
 
-    // 2) lookup backup
+    // 1) lookup backup (uses database.getBackupByCode)
+    let backup;
     try {
-      row = backupsDb.prepare('SELECT userId FROM backups WHERE code = ?').get(code);
+      backup = await database.getBackupByCode(code);
     } catch (err) {
-      console.error('⚠️ [/restore] DB lookup failed:', err);
+      console.error('[/restore] DB lookup error:', err);
       return interaction.editReply('❌ Restore failed. Please try again later.').catch(() => null);
     }
-    if (!row) {
+
+    if (!backup || !backup.userId) {
       return interaction.editReply('❌ Unknown code.').catch(() => null);
     }
 
-    const oldId = row.userId;
+    const oldId = String(backup.userId);
     const newId = interaction.user.id;
 
-    // 3) prevent self-restore
+    // 2) prevent self-restore
     if (oldId === newId) {
-      try {
-        backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
-      } catch (e) {
-        console.error('⚠️ [/restore] Failed to delete self-restore code:', e);
-      }
-      return interaction.editReply(
-        '❌ Cannot restore the same account. Generate a new backup with `/backup`.'
-      ).catch(() => null);
+      try { await database.deleteBackupByCode(code); } catch (e) { /* ignore */ }
+      return interaction.editReply('❌ Cannot restore the same account. Generate a new backup with `/backup`.').catch(() => null);
     }
 
-    // 4) fetch old balance
+    // 3) fetch old user (uses database.getUser)
     let origin;
     try {
-      origin = getUser(oldId);
+      origin = await database.getUser(oldId);
     } catch (err) {
-      console.error('⚠️ [/restore] Failed to fetch old user data:', err);
+      console.error('[/restore] getUser error:', err);
       return interaction.editReply('❌ Failed to retrieve backup owner.').catch(() => null);
     }
-    const oldBal = origin.coins;
-    if (oldBal <= 0) {
-      // delete empty backup
-      try {
-        backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
-      } catch (e) {
-        console.error('⚠️ [/restore] Failed to delete empty backup code:', e);
-      }
+
+    // origin.coins is stored in SATOSHIS (integer)
+    const amountSats = Number(origin?.coins || 0);
+
+    if (!Number.isFinite(amountSats) || amountSats <= 0) {
+      try { await database.deleteBackupByCode(code); } catch (e) { /* ignore */ }
       return interaction.editReply('❌ That wallet has no coins.').catch(() => null);
     }
 
-    // 5) truncate to 8 decimal places
-    const truncatedBal = Math.floor(oldBal * 1e8) / 1e8;
-
-    // 6) transfer funds
+    // 4) transfer: add to new user, zero old user (uses addCoins / setCoins)
     try {
-      addCoins(newId, truncatedBal);
-      setCoins(oldId, 0);
+      await database.addCoins(newId, amountSats);
+      await database.setCoins(oldId, 0);
     } catch (err) {
-      console.error('⚠️ [/restore] Error transferring balance:', err);
+      console.error('[/restore] transfer error:', err);
       return interaction.editReply('❌ Could not transfer balance. Try again later.').catch(() => null);
     }
 
-    // 7) log transactions (best-effort)
-    const date = new Date().toISOString();
+    // 5) log transactions (uses genUniqueTxId + logTransaction)
     try {
-      const tx1 = genUniqueTxId();
-      db.prepare(`
-        INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(tx1, date, oldId, newId, truncatedBal);
-
-      const tx2 = genUniqueTxId();
-      db.prepare(`
-        INSERT INTO transactions(id, date, from_id, to_id, amount)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(tx2, date, oldId, newId, truncatedBal);
+      const date = new Date().toISOString();
+      const tx1 = typeof database.genUniqueTxId === 'function' ? database.genUniqueTxId() : `tx-${Date.now()}-1`;
+      const tx2 = typeof database.genUniqueTxId === 'function' ? database.genUniqueTxId() : `tx-${Date.now()}-2`;
+      await database.logTransaction(tx1, date, oldId, newId, amountSats);
+      await database.logTransaction(tx2, date, oldId, newId, amountSats);
     } catch (err) {
-      console.warn('⚠️ [/restore] Failed to log transactions:', err);
+      console.warn('[/restore] transaction logging failed:', err);
     }
 
-    // 8) delete used backup code
+    // 6) delete used backup code
     try {
-      backupsDb.prepare('DELETE FROM backups WHERE code = ?').run(code);
+      await database.deleteBackupByCode(code);
     } catch (err) {
-      console.error('⚠️ [/restore] Failed to delete used backup code:', err);
+      console.warn('[/restore] delete backup failed:', err);
     }
 
-    // 9) final confirmation
-    return interaction.editReply(
-      `🎉 Successfully restored **${truncatedBal.toFixed(8)} coins** to your wallet!`
-    ).catch(() => null);
-  }
+    // 7) final confirmation — convert sats -> coins for display
+    const display = typeof database.fromSats === 'function'
+      ? database.fromSats(amountSats)
+      : (amountSats / 1e8).toFixed(8);
+
+    return interaction.editReply(`🎉 Successfully restored **${display} coins** to your wallet!`).catch(() => null);
+  },
 };
