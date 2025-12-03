@@ -42,7 +42,7 @@
 
        - Go to the api.js and change the port number in:
          ```
-           const port = process.env.API_PORT || 1033;  <<< // Change the port here
+           const port = process.env.API_PORT || 26450;  <<< // Change the port here
              app.listen(port, () => {
                console.log(`API REST rodando na porta ${port}`);
             });
@@ -56,6 +56,13 @@
       or
       ```
         node index.js
+      ```
+
+      Defaults:
+      ```
+      API Port: 26450
+      Discord bot: https://discord.com/oauth2/authorize?client_id=1391067775077978214
+      API Online: http://coin.foxsrv.net:26450/
       ```
 
       Here is the configurations:
