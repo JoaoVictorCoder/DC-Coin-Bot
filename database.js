@@ -1241,6 +1241,78 @@ function enqueueDM(userId, embedObj = {}, rowObj = {}) {
   }
 }
 
+// -----------------------
+// Card / User summary helpers
+// -----------------------
+
+/**
+ * Retorna a quantidade total de transações envolvendo o usuário (from OR to).
+ * @param {string} userId
+ * @returns {number}
+ */
+function getTransactionCount(userId) {
+  const row = db.prepare(`
+    SELECT COUNT(*) as c FROM transactions
+    WHERE from_id = ? OR to_id = ?
+  `).get(userId, userId);
+  return row ? (row.c || 0) : 0;
+}
+
+/**
+ * Retorna um resumo do usuário (balance em sats, balance em coin string,
+ * total de transações, cooldown timestamp).
+ * @param {string} userId
+ * @returns {{ userId:string, sats:number, coins:string, txCount:number, cooldown:number }}
+ */
+function getUserSummary(userId) {
+  const user = getUser(userId);
+  if (!user) return null;
+  const txCount = getTransactionCount(userId);
+  return {
+    userId,
+    sats: user.coins || 0,
+    coins: fromSats(user.coins || 0),
+    txCount,
+    cooldown: user.cooldown || 0
+  };
+}
+
+/**
+ * Busca dono do cartão a partir do código (usa lookup direto por code).
+ * (Se já existir getCardOwner, ele retorna owner_id; esta função retorna também fallback).
+ * @param {string} cardCode
+ * @returns {string|null} ownerId
+ */
+function getOwnerIdByCardCode(cardCode) {
+  // tenta match direto (código armazenado)
+  const direct = db.prepare('SELECT owner_id FROM cards WHERE code = ? LIMIT 1').get(cardCode);
+  if (direct && direct.owner_id) return direct.owner_id;
+  // fallback para hash matching (se você usa hashing em endpoints)
+  const hash = crypto.createHash('sha256').update(String(cardCode)).digest('hex');
+  return getCardOwnerByHash(hash);
+}
+
+function transferBetweenOwnersAtomic(fromOwnerId, toOwnerId, sats) {
+  // sats: already integer satoshis
+  if (typeof transferAtomicWithTxId === 'function') {
+    // transferAtomicWithTxId(from, to, sats, txId) deve retornar { txId, date }
+    return transferAtomicWithTxId(fromOwnerId, toOwnerId, sats, genUniqueTxId());
+  }
+  if (typeof transferAtomic === 'function') {
+    return transferAtomic(fromOwnerId, toOwnerId, sats);
+  }
+  // fallback manual (last resort)
+  const txId = genUniqueTxId();
+  const date = new Date().toISOString();
+  db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(sats, fromOwnerId);
+  db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(sats, toOwnerId);
+  db.prepare(`
+    INSERT INTO transactions (id, date, from_id, to_id, amount)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(txId, date, fromOwnerId, toOwnerId, sats);
+  return { txId, date };
+}
+
 
 
 
@@ -1286,7 +1358,9 @@ module.exports = {
   listBillsTo,
   listBillsFrom,
   resetDmQueueSequence,
-  cleanOldIps, listBackupsForUser,
+  cleanOldIps, listBackupsForUser, getTransactionCount,
+  getUserSummary,
+  getOwnerIdByCardCode, transferBetweenOwnersAtomic,
   // bill
   genUniqueBillId, createBill, getBill, deleteBill, listBillsByUser
 };

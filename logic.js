@@ -837,6 +837,131 @@ async function getTotalUsers() {
   return all.length;
 }
 
+
+/**
+ * Recebe um cardCode (string) e retorna o ownerId (userId) ou null.
+ */
+async function getUserIdByCard(cardCode) {
+  const db = require('./database');
+  // tenta direto (owner por code) e fallback por hash (database fornece helper)
+  let ownerId = null;
+  if (typeof db.getOwnerIdByCardCode === 'function') {
+    ownerId = db.getOwnerIdByCardCode(cardCode);
+  } else if (typeof db.getCardOwner === 'function') {
+    ownerId = db.getCardOwner(cardCode);
+  } else {
+    // fallback: compute hash and use existing helper (if present)
+    try {
+      const cardHash = require('crypto').createHash('sha256').update(String(cardCode)).digest('hex');
+      if (typeof db.getCardOwnerByHash === 'function') ownerId = db.getCardOwnerByHash(cardHash);
+    } catch (e) { ownerId = null; }
+  }
+  return ownerId || null;
+}
+
+/**
+ * Retorna informações completas da conta por cardCode:
+ * { userId, coins, sats, totalTx, cooldownRemainingMs, lastClaimTs, claimCooldownMs }
+ */
+async function getAccountInfoByCard(cardCode) {
+  const db = require('./database');
+  const claimConfig = require('./claimConfig');
+  const ownerId = await getUserIdByCard(cardCode);
+  if (!ownerId) return { found: false };
+
+  const summary = typeof db.getUserSummary === 'function' ? db.getUserSummary(ownerId) : null;
+  const lastClaimTs = typeof db.getCooldown === 'function' ? db.getCooldown(ownerId) : (summary ? summary.cooldown : 0);
+  const cooldownMs = (typeof claimConfig.getClaimWait === 'function') ? claimConfig.getClaimWait() : (process.env.CLAIM_WAIT_MS ? parseInt(process.env.CLAIM_WAIT_MS) : 0);
+  const remaining = Math.max(0, (lastClaimTs || 0) + cooldownMs - Date.now());
+
+  return {
+    found: true,
+    userId: ownerId,
+    coins: summary ? summary.coins : '0.00000000',
+    sats: summary ? summary.sats : 0,
+    totalTransactions: summary ? summary.txCount : 0,
+    lastClaimTs: lastClaimTs || 0,
+    cooldownRemainingMs: remaining,
+    cooldownMs
+  };
+}
+
+/**
+ * Realiza o claim usando cardCode (equivalente ao claim do usuário),
+ * respeitando cooldown via logic.claimCoins / db.setCooldown.
+ *
+ * Retorna { success: boolean, claimed?: string, tx?: { txId, date }, error?:string }
+ */
+async function claimByCard(cardCode) {
+  const ownerId = await getUserIdByCard(cardCode);
+  if (!ownerId) return { success: false, error: 'CARD_NOT_FOUND' };
+
+  // verifica cooldown via logic.getCooldown (já existe)
+  const last = (typeof getCooldown === 'function') ? await getCooldown(ownerId) : (typeof db.getCooldown === 'function' ? db.getCooldown(ownerId) : 0);
+  const wait = (typeof require('./claimConfig').getClaimWait === 'function') ? require('./claimConfig').getClaimWait() : (process.env.CLAIM_WAIT_MS ? parseInt(process.env.CLAIM_WAIT_MS) : 0);
+  if (Date.now() - (last || 0) < wait) {
+    return { success: false, error: 'COOLDOWN_ACTIVE', nextClaimInMs: Math.max(0, (last || 0) + wait - Date.now()) };
+  }
+
+  // delega para claimCoins (já faz a parte de adicionar coins e setCooldown)
+  try {
+    const result = await claimCoins(ownerId); // claimCoins está presente no logic.js
+    return { success: true, claimed: result && result.claimed ? result.claimed : undefined };
+  } catch (err) {
+    return { success: false, error: (err && err.message) ? err.message : String(err) };
+  }
+}
+
+async function transferBetweenCards(fromCardCode, toCardCode, amount) {
+  const db = require('./database');
+
+  if (!fromCardCode || !toCardCode) return { success: false, error: 'MISSING_CARD' };
+  if (fromCardCode === toCardCode) return { success: false, error: 'SAME_CARD' };
+
+  // 1) resolve ownerIds via helper já presente (getOwnerIdByCardCode / getCardOwner)
+  let fromOwner = null;
+  if (typeof db.getOwnerIdByCardCode === 'function') {
+    fromOwner = db.getOwnerIdByCardCode(fromCardCode);
+  } else if (typeof db.getCardOwner === 'function') {
+    fromOwner = db.getCardOwner(fromCardCode);
+  }
+  let toOwner = null;
+  if (typeof db.getOwnerIdByCardCode === 'function') {
+    toOwner = db.getOwnerIdByCardCode(toCardCode);
+  } else if (typeof db.getCardOwner === 'function') {
+    toOwner = db.getCardOwner(toCardCode);
+  }
+
+  if (!fromOwner) return { success: false, error: 'FROM_CARD_NOT_FOUND' };
+  if (!toOwner)   return { success: false, error: 'TO_CARD_NOT_FOUND' };
+
+  // 2) delega para transferCoins (faz validação de amount, saldo e cooldown 1s)
+  try {
+    // transferCoins espera userId -> toId -> rawAmount (string/number). Reaproveitamos.
+    const tresult = await transferCoins(fromOwner, toOwner, amount);
+    // transferCoins retorna { txId, date } || { txId:null } em cooldown
+    if (!tresult || !tresult.txId) {
+      // pode ter sido bloqueado por cooldown (transferCoins retorna {txId:null,date:null})
+      // vamos tentar sinalizar melhor:
+      return { success: false, error: 'COOLDOWN_OR_FAILED', details: tresult };
+    }
+    return { success: true, txId: tresult.txId, date: tresult.date };
+  } catch (err) {
+    // fallback: tentar operação atômica direta (DB helper)
+    try {
+      const sats = toSats(String(amount));
+      const tx = db.transferBetweenOwnersAtomic
+        ? db.transferBetweenOwnersAtomic(fromOwner, toOwner, sats)
+        : (typeof db.transferAtomicWithTxId === 'function' ? db.transferAtomicWithTxId(fromOwner, toOwner, sats, genUniqueTxId()) : null);
+      if (tx && tx.txId) return { success: true, txId: tx.txId, date: tx.date || new Date().toISOString() };
+    } catch (e) { /* ignore fallback error */ }
+
+    return { success: false, error: (err && err.message) ? err.message : String(err) };
+  }
+}
+
+
+
 module.exports = {
   authenticate,
   login,
@@ -871,4 +996,7 @@ module.exports = {
   checkTransaction,
   createBill: createBillLogic,
   payBill: payBillLogic,
+  getUserIdByCard,
+  getAccountInfoByCard,
+  claimByCard, transferBetweenCards,
 };

@@ -570,6 +570,28 @@ queue.setProcessor(async (payload, queueId) => {
       }
       throw new Error('payBill not implemented');
     }
+        case 'card_info': {
+      // args: { cardCode }
+      const { cardCode } = payload.args || {};
+      if (!cardCode) throw new Error('missing_cardCode');
+      if (typeof logic.getAccountInfoByCard !== 'function') throw new Error('card_info_not_implemented');
+      return await logic.getAccountInfoByCard(cardCode);
+    }
+    case 'card_claim': {
+      // args: { cardCode }
+      const { cardCode } = payload.args || {};
+      if (!cardCode) throw new Error('missing_cardCode');
+      if (typeof logic.claimByCard !== 'function') throw new Error('card_claim_not_implemented');
+      return await logic.claimByCard(cardCode);
+    }
+
+    case 'transfer_between_cards': {
+      // args: { fromCard, toCard, amount }
+      const { fromCard, toCard, amount } = payload.args || {};
+      if (!fromCard || !toCard || !amount) throw new Error('missing_params');
+      if (typeof logic.transferBetweenCards !== 'function') throw new Error('transferBetweenCards_not_implemented');
+      return await logic.transferBetweenCards(fromCard, toCard, amount);
+    }
 
     default:
       throw new Error('unknown_op:' + payload.op);
@@ -1120,6 +1142,96 @@ app.get('/api/rank', authMiddleware, async (req, res) => {
     return;
   }
 });
+
+// POST /api/card/info
+// body: { cardCode: "abcdef" }
+app.post('/api/card/info', async (req, res) => {
+  const { cardCode } = req.body || {};
+  if (!cardCode) return res.status(400).json({ success: false, error: 'Missing cardCode' });
+
+  const payload = { op: 'card_info', args: { cardCode } };
+  try {
+    const result = await queue.enqueueAndWait(payload, QUEUE_WAIT_TIMEOUT_MS);
+    if (!result || !result.found) return res.status(404).json({ success: false, error: 'Card not found' });
+    // return a mesma shape que descrevemos em logic.getAccountInfoByCard
+    return res.json({
+      success: true,
+      userId: result.userId,
+      coins: result.coins,
+      sats: result.sats,
+      totalTransactions: result.totalTransactions,
+      lastClaimTs: result.lastClaimTs,
+      cooldownRemainingMs: result.cooldownRemainingMs,
+      cooldownMs: result.cooldownMs
+    });
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    if (msg.startsWith('ENQUEUE_REJECTED')) return res.status(429).json({ success: false, error: 'QUEUE_FULL' });
+    if (msg === 'QUEUE_WAIT_TIMEOUT') return res.status(504).json({ success: false, error: 'QUEUE_TIMEOUT' });
+    console.error('Card info error:', err);
+    return res.status(500).json({ success: false, error: 'Internal error' });
+  }
+});
+
+// POST /api/card/claim
+// body: { cardCode: "abcdef" } -> tenta executar claim para conta dona do cartão
+app.post('/api/card/claim', async (req, res) => {
+  const { cardCode } = req.body || {};
+  if (!cardCode) return res.status(400).json({ success: false, error: 'Missing cardCode' });
+
+  const payload = { op: 'card_claim', args: { cardCode } };
+  try {
+    const result = await queue.enqueueAndWait(payload, QUEUE_WAIT_TIMEOUT_MS);
+    if (!result) return res.status(500).json({ success: false, error: 'Internal error' });
+
+    if (!result.success) {
+      if (result.error === 'COOLDOWN_ACTIVE') {
+        return res.status(429).json({ success: false, error: 'COOLDOWN_ACTIVE', nextClaimInMs: result.nextClaimInMs });
+      }
+      if (result.error === 'CARD_NOT_FOUND') {
+        return res.status(404).json({ success: false, error: 'CARD_NOT_FOUND' });
+      }
+      return res.status(400).json({ success: false, error: result.error || 'claim_failed' });
+    }
+
+    // success: retorna o valor reclamado (string coin) e outras infos
+    return res.json({ success: true, claimed: result.claimed });
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    if (msg.startsWith('ENQUEUE_REJECTED')) return res.status(429).json({ success: false, error: 'QUEUE_FULL' });
+    if (msg === 'QUEUE_WAIT_TIMEOUT') return res.status(504).json({ success: false, error: 'QUEUE_TIMEOUT' });
+    console.error('Card claim error:', err);
+    return res.status(500).json({ success: false, error: 'Internal error' });
+  }
+});
+
+// POST /api/card/pay
+// body: { fromCard: "abc123", toCard: "def456", amount: 0.001 }
+app.post('/api/card/pay', async (req, res) => {
+  const { fromCard, toCard, amount } = req.body || {};
+  if (!fromCard || !toCard || isNaN(amount) || Number(amount) <= 0) {
+    if (!res.headersSent) return res.status(400).json({ success: false, error: 'Invalid parameters' });
+    return;
+  }
+
+  try {
+    // opcional: normalize/truncate amount to 8 decimals
+    const truncated = Math.floor(Number(amount) * 1e8) / 1e8;
+    const payload = { op: 'transfer_between_cards', args: { fromCard, toCard, amount: truncated } };
+
+    // legacyReturn similar ao transfer_card (retorna txId quando disponível)
+    await doEnqueueAndMap(req, res, payload, { legacyReturn: 'transfer_card' });
+  } catch (err) {
+    console.error('Card pay error:', err && err.stack ? err.stack : err);
+    if (!res.headersSent) return res.status(500).json({ success: false, error: 'Internal error' });
+    return;
+  }
+});
+
+
+
+
+
 
 // Optional queue debug (only if EXPOSE_INTERNALS)
 if (process.env.EXPOSE_INTERNALS === 'true') {
