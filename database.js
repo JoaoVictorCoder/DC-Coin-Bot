@@ -1246,19 +1246,6 @@ function enqueueDM(userId, embedObj = {}, rowObj = {}) {
 // -----------------------
 
 /**
- * Retorna a quantidade total de transações envolvendo o usuário (from OR to).
- * @param {string} userId
- * @returns {number}
- */
-function getTransactionCount(userId) {
-  const row = db.prepare(`
-    SELECT COUNT(*) as c FROM transactions
-    WHERE from_id = ? OR to_id = ?
-  `).get(userId, userId);
-  return row ? (row.c || 0) : 0;
-}
-
-/**
  * Retorna um resumo do usuário (balance em sats, balance em coin string,
  * total de transações, cooldown timestamp).
  * @param {string} userId
@@ -1358,7 +1345,7 @@ module.exports = {
   listBillsTo,
   listBillsFrom,
   resetDmQueueSequence,
-  cleanOldIps, listBackupsForUser, getTransactionCount,
+  cleanOldIps, listBackupsForUser,
   getUserSummary,
   getOwnerIdByCardCode, transferBetweenOwnersAtomic,
   // bill
