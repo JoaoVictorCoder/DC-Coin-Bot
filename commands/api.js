@@ -5,11 +5,11 @@ const { setServerApiChannel } = require('../database'); // <-- única importaç�
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('api')
-    .setDescription('Define o canal onde a API enviará notificações de transação.')
+    .setDescription('Sets the API channel.')
     .addChannelOption(opt =>
       opt
         .setName('channel')
-        .setDescription('Canal de texto para receber mensagens da API')
+        .setDescription('API text channel')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setRequired(true)
     )
@@ -23,14 +23,24 @@ module.exports = {
       // Apenas em servidor
       if (!interaction.guild) {
         return interaction.editReply({
-          content: '❌ Este comando só pode ser usado dentro de um servidor.',
+          content: '❌ Use this in a Server.',
         });
       }
 
-      // Apenas dono do servidor
-      if (interaction.user.id !== interaction.guild.ownerId) {
+      // Permissão: dono do servidor OU Administrador
+      const isOwner = interaction.user.id === interaction.guild.ownerId;
+      let isAdmin = false;
+      try {
+        if (interaction.member && interaction.member.permissions && typeof interaction.member.permissions.has === 'function') {
+          isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+        }
+      } catch (permErr) {
+        isAdmin = false;
+      }
+
+      if (!isOwner && !isAdmin) {
         return interaction.editReply({
-          content: '🚫 Apenas o dono do servidor pode configurar o canal da API.',
+          content: '🚫 Only admins can use this command.',
         });
       }
 
@@ -39,7 +49,7 @@ module.exports = {
       // Validar canal
       if (!channel || !channel.isTextBased()) {
         return interaction.editReply({
-          content: '❌ Escolha um canal de texto válido.',
+          content: '❌ Use a valid channel.',
         });
       }
 
@@ -51,7 +61,7 @@ module.exports = {
       const perms = channel.permissionsFor(botMember);
       if (!perms || !perms.has(PermissionFlagsBits.SendMessages)) {
         return interaction.editReply({
-          content: '❌ Eu não tenho permissão para enviar mensagens nesse canal.',
+          content: '❌ No permission to send messages in that channel.',
         });
       }
 
@@ -61,13 +71,13 @@ module.exports = {
       await setServerApiChannel(interaction.guild.id, channel.id);
 
       return interaction.editReply({
-        content: `✅ O canal da API foi configurado para ${channel}.`,
+        content: `✅ API channel set to ${channel}.`,
       });
     } catch (err) {
-      console.error('❌ Erro no comando /api:', err);
+      console.error('❌ Command error /api:', err);
       return interaction.editReply({
         content:
-          '❌ Ocorreu um erro interno ao configurar o canal da API. Tente novamente mais tarde.',
+          '❌ An error has ocurred while performing that command, try again later.',
       });
     }
   },

@@ -67,9 +67,19 @@ module.exports = {
         return interaction.editReply('❌ This command can only be used in servers.');
       }
 
-      // apenas o dono do servidor pode rodar
-      if (interaction.user.id !== interaction.guild.ownerId) {
-        return interaction.editReply('🚫 Only the server owner can run this.');
+      // apenas dono do servidor OU administrador (role com permissão Administrator)
+      const isOwner = interaction.user.id === interaction.guild.ownerId;
+      let isAdmin = false;
+      try {
+        if (interaction.member && interaction.member.permissions && typeof interaction.member.permissions.has === 'function') {
+          isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+        }
+      } catch (permErr) {
+        isAdmin = false;
+      }
+
+      if (!isOwner && !isAdmin) {
+        return interaction.editReply('🚫 Only the server owner or administrators can run this.');
       }
 
       const canal = interaction.options.getChannel('canal');
