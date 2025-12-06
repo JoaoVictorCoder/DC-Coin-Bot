@@ -661,10 +661,21 @@ if (cmd === 'set') {
       try { return await message.reply('❌ This command must be used in a server.'); } catch { return; }
     }
 
-    // 3) somente dono do servidor
-    if (message.author.id !== message.guild.ownerId) {
-      try { return await message.reply('❌ Only server owner.'); } catch { return; }
-      return;
+    // 3) somente dono do servidor OU administrador (role com permissão Administrator)
+    // message.member pode ser null em casos estranhos; garantir fallback
+    const member = message.member;
+    const isOwner = message.author.id === message.guild.ownerId;
+    let isAdmin = false;
+    try {
+      if (member && typeof member.permissions !== 'undefined' && typeof member.permissions.has === 'function') {
+        isAdmin = member.permissions.has('Administrator');
+      }
+    } catch (permErr) {
+      isAdmin = false;
+    }
+
+    if (!isOwner && !isAdmin) {
+      try { return await message.reply('❌ Only server owner or members with Administrator permission can use this command.'); } catch { return; }
     }
 
     // 4) resolve o canal: aceita menção de canal, <#id>, id puro
@@ -814,34 +825,68 @@ if (cmd === 'set') {
 }
 
 
+
   // ------------------------------------------------------------
   // !api (configures server api channel)
   // ------------------------------------------------------------
-  if (cmd === 'api') {
-    const channelId = args[0];
+if (cmd === 'api') {
+  const channelId = args[0];
 
-    if (!channelId) {
-      try { await message.reply('❌ Correct usage: !api <channelId>'); } catch (err) { console.warn('⚠️ No permission to send API usage message:', err); }
-      return;
+  if (!channelId) {
+    try { 
+      await message.reply('❌ Correct usage: !api <channelId>'); 
+    } catch (err) { 
+      console.warn('⚠️ No permission to send API usage message:', err); 
     }
-
-    if (!message.guild) return;
-    const ownerId = message.guild.ownerId;
-    if (message.author.id !== ownerId) {
-      try { await message.reply('❌ Only the server owner can config this.'); } catch (err) { console.warn('⚠️ No permission to send owner-only message:', err); }
-      return;
-    }
-
-    try {
-      const database = require('./database');
-      await database.setServerApiChannel(message.guild.id, channelId);
-    } catch (err) {
-      console.error('⚠️ API setup error:', err);
-      return;
-    }
-
-    try { await message.reply('✅ API channel setup done.'); } catch (err) { console.warn('⚠️ No permission to send API channel setup message:', err); }
+    return;
   }
+
+  // precisa estar numa guild
+  if (!message.guild) return;
+
+  // referência ao membro que enviou
+  const member = message.member;
+
+  // verifica dono
+  const isOwner = message.author.id === message.guild.ownerId;
+
+  // verifica administrador
+  let isAdmin = false;
+  try {
+    if (member && member.permissions && typeof member.permissions.has === 'function') {
+      isAdmin = member.permissions.has('Administrator');
+    }
+  } catch {
+    isAdmin = false;
+  }
+
+  // se não for dono e não for admin → bloquear
+  if (!isOwner && !isAdmin) {
+    try { 
+      await message.reply('❌ Only the server owner **or administrators** can config this.'); 
+    } catch (err) { 
+      console.warn('⚠️ No permission to send owner/admin-only message:', err); 
+    }
+    return;
+  }
+
+  // salva no DB
+  try {
+    const database = require('./database');
+    await database.setServerApiChannel(message.guild.id, channelId);
+  } catch (err) {
+    console.error('⚠️ API setup error:', err);
+    return;
+  }
+
+  // confirma
+  try { 
+    await message.reply('✅ API channel setup done.'); 
+  } catch (err) { 
+    console.warn('⚠️ No permission to send API channel setup message:', err); 
+  }
+}
+
 
   // ------------------------------------------------------------
   // !pay

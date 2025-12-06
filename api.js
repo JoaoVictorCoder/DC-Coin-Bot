@@ -593,6 +593,25 @@ queue.setProcessor(async (payload, queueId) => {
       return await logic.transferBetweenCards(fromCard, toCard, amount);
     }
 
+    case 'bill_create_card': {
+  // args: { fromCard, toCard, amount, time }
+  const { fromCard, toCard, amount, time } = payload.args || {};
+  if (!toCard && !fromCard) throw new Error('Missing fromCard or toCard');
+  if (!amount || isNaN(amount) || Number(amount) <= 0) throw new Error('Invalid amount');
+  if (typeof logic.createBillByCard !== 'function') throw new Error('createBillByCard not implemented in logic');
+  return await logic.createBillByCard({ fromCard, toCard, amount, time });
+}
+
+case 'bill_pay_card': {
+  // args: { cardCode, billId }
+  const { cardCode, billId } = payload.args || {};
+  if (!cardCode || !billId) throw new Error('Missing cardCode or billId');
+  if (typeof logic.payBillByCard !== 'function') throw new Error('payBillByCard not implemented in logic');
+  const out = await logic.payBillByCard(cardCode, billId);
+  if (!out || !out.success) throw new Error(out && out.error ? out.error : 'Failed to pay bill by card');
+  return { success: true };
+}
+
     default:
       throw new Error('unknown_op:' + payload.op);
   }
@@ -1224,6 +1243,50 @@ app.post('/api/card/pay', async (req, res) => {
   } catch (err) {
     console.error('Card pay error:', err && err.stack ? err.stack : err);
     if (!res.headersSent) return res.status(500).json({ success: false, error: 'Internal error' });
+    return;
+  }
+});
+
+app.post('/api/bill/create/card', async (req, res) => {
+  const { fromCard, toCard, amount, time } = req.body || {};
+
+  // validações básicas
+  if ((!fromCard && !toCard) || isNaN(amount) || Number(amount) <= 0) {
+    if (!res.headersSent) return res.status(400).json({ error: 'Invalid parameters' });
+    return;
+  }
+
+  try {
+    // truncate para 8 casas, mantendo shape dos outros endpoints
+    const truncated = Math.floor(Number(amount) * 1e8) / 1e8;
+    const payload = { op: 'bill_create_card', args: { fromCard, toCard, amount: truncated, time } };
+
+    // Enfileira e retorna o resultado da lógica (ex.: { success:true, billId })
+    // doEnqueueAndMap já faz mapeamento e timeout/caching igual aos outros endpoints
+    await doEnqueueAndMap(req, res, payload, {});
+  } catch (err) {
+    console.error('Bill create by card error:', err && err.stack ? err.stack : err);
+    if (!res.headersSent) return res.status(500).json({ error: 'Internal error' });
+    return;
+  }
+});
+
+app.post('/api/bill/pay/card', async (req, res) => {
+  const { cardCode, billId } = req.body || {};
+  if (!cardCode || !billId) {
+    if (!res.headersSent) return res.status(400).json({ error: 'Missing parameters' });
+    return;
+  }
+
+  try {
+    const payload = { op: 'bill_pay_card', args: { cardCode, billId } };
+    // usar doEnqueueAndMap mantém comportamento consistente (fila, idempotência e fallback)
+    await doEnqueueAndMap(req, res, payload, {});
+    // se doEnqueueAndMap retornar normalmente, ele já respondeu ao cliente.
+    return;
+  } catch (err) {
+    console.error('Bill pay by card error:', err && err.stack ? err.stack : err);
+    if (!res.headersSent) return res.status(500).json({ error: 'Internal error' });
     return;
   }
 });

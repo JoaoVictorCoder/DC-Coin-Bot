@@ -960,6 +960,54 @@ async function transferBetweenCards(fromCardCode, toCardCode, amount) {
   }
 }
 
+async function createBillByCard({ fromCard, toCard, amount, time }) {
+  const db = require('./database');
+
+  // resolve owner ids a partir dos cards (tenta helpers diferentes)
+  const resolveOwner = code => {
+    if (!code) return null;
+    if (typeof db.getOwnerIdByCardCode === 'function') return db.getOwnerIdByCardCode(code);
+    if (typeof db.getCardOwner === 'function') return db.getCardOwner(code);
+    return null;
+  };
+
+  const fromId = fromCard ? resolveOwner(fromCard) : null;
+  const toId   = toCard   ? resolveOwner(toCard)   : null;
+
+  if (!fromId && !toId) throw new Error('Missing fromCard or toCard (cannot resolve owner)');
+
+  // Reuse createBill logic (mantém validações e parsing de duração)
+  // createBillLogic espera fromId (pode ser ''), toId, amount, time
+  return await createBillLogic(fromId || '', toId, amount, time);
+}
+
+async function payBillByCard(cardCode, billId) {
+  if (!cardCode) throw new Error('Missing cardCode');
+  if (!billId) throw new Error('Missing billId');
+
+  const db = require('./database');
+
+  // resolve payer userId
+  let payerId = null;
+  if (typeof db.getOwnerIdByCardCode === 'function') {
+    payerId = db.getOwnerIdByCardCode(cardCode);
+  }
+  if (!payerId && typeof db.getCardOwner === 'function') {
+    payerId = db.getCardOwner(cardCode);
+  }
+  if (!payerId) return { success: false, error: 'CARD_NOT_FOUND' };
+
+  // Delegate para payBillLogic (mesma lógica existente — verifica self-pay, faz transferAtomicWithTxId, insere tx com billId e deleta bill)
+  // payBillLogic já lança erros em falhas; vamos capturá-los e adaptar retorno
+  try {
+    await payBillLogic(payerId, billId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err && err.message) ? err.message : String(err) };
+  }
+}
+
+
 
 
 module.exports = {
@@ -999,4 +1047,6 @@ module.exports = {
   getUserIdByCard,
   getAccountInfoByCard,
   claimByCard, transferBetweenCards,
+  createBillByCard,
+  payBillByCard,
 };
