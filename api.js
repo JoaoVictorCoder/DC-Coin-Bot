@@ -1291,12 +1291,6 @@ app.post('/api/bill/pay/card', async (req, res) => {
   }
 });
 
-
-
-
-
-
-// Optional queue debug (only if EXPOSE_INTERNALS)
 if (process.env.EXPOSE_INTERNALS === 'true') {
   app.get('/api/queue/info', (req, res) => res.json(queue.info()));
   app.get('/api/queue/status/:id', (req, res) => res.json(queue.getStatus(req.params.id)));
@@ -1308,19 +1302,42 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) return res.status(500).json({ error: 'Internal server error' });
 });
 
-// export
-module.exports = {
-  startApiServer: () => {
-    const port = process.env.API_PORT || 26450;
-    app.listen(port, () => console.log(`API REST running on port ${port}`));
-  },
-  __internals: (process.env.EXPOSE_INTERNALS === 'true') ? {
-    queue, cacheByIp, cacheTotalOps, ipBuckets, pendingCachePromises
-  } : {}
-};
 
-// If run directly
-if (require.main === module) {
-  const port = process.env.API_PORT || 26450;
-  app.listen(port, () => console.log(`API REST running on port ${port}`));
+
+
+const HOST = process.env.HOST || '0.0.0.0';
+const PORT = process.env.PORT || process.env.API_PORT || 26450;
+
+/**
+ * startApiServer
+ * - inicia o servidor e resolve a Promise quando o `listen` estiver pronto
+ * - escuta em 0.0.0.0 por padrão (acessível externamente)
+ * - instala rota /health apenas uma vez
+ */
+function startApiServer() {
+  return new Promise((resolve, reject) => {
+    try {
+      // rota health (útil para debug)
+      if (!app._healthRouteInstalled) {
+        app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+        app._healthRouteInstalled = true;
+      }
+
+      const srv = app.listen(Number(PORT), HOST, (err) => {
+        if (err) return reject(err);
+        console.log(`API REST running on http://${HOST}:${PORT}`);
+        resolve(srv);
+      });
+
+      // opcional: on error
+      srv.on('error', (e) => {
+        console.error('API server error:', e);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
+
+// exporta startApiServer (e app para testes/instrumentação)
+module.exports = { startApiServer, app };
