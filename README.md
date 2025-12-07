@@ -65,6 +65,56 @@
       API Online: http://coin.foxsrv.net:26450/
       ```
 
+- How to setup the cloudflare tunnel (you will need to enable this in .env and buy a domain in cloudflare);
+
+If you are using linux:
+
+Go to the cloudflared folder and execute:
+```
+bash
+
+cloudflared tunnel login
+
+cloudflared login
+```
+If you are using Windows, open PowerShell as admin inside the cloudflared folder and execute:
+```
+cloudflared tunnel login
+
+cloudflared login
+```
+Create a tunnel:
+```
+cloudflared tunnel create tunnel_name
+```
+Edit the config.yml of cloudflared folder to use your domain setup:
+```
+tunnel: tunnel-name
+credentials-file: ./coin-bot.json   # ou o nome do .json que você tem
+origincert: ./cert.pem
+
+ingress:
+  - hostname: coin.your_domain.me
+    service: http://localhost:26450
+  - service: http_status:404
+
+```
+All the times you run those commands, the console will show you where the files appear, and you need to go there to copy them and paste in the cloudflared folder of the project.
+You will need to rename the files as your config.yml is listening.
+
+Finished, you now has SSL secured API URL and site hosted :D
+
+Or you can use a random URL only to host a SSL secured URL without your own domain (free):
+```
+# .env file:
+
+TEMP_TUNNEL_ENABLED=true < leave this on (true)
+TEMP_TUNNEL_PORT=3000 < change the port for the port you use
+TEMP_TUNNEL_LOCAL_HOST=127.0.0.1 < leave this like this or 0.0.0.0
+
+```
+
+
       Here is the configurations:
 
 ```
@@ -149,6 +199,28 @@ RATE_LIMIT_BURST=10
 
 # Tamanho máximo permitido para o JSON do body (default: "1mb")
 REQUEST_BODY_LIMIT=1mb
+
+###########################################
+# TUNNEL
+###########################################
+
+CLOUDFLARE_ENABLED=true
+CLOUDFLARE_TUNNEL_NAME=coin-bot
+CLOUDFLARE_HOSTNAME=coin.your_domain.me
+CLOUDFLARE_CREDENTIALS=cloudflared/coin-bot.json
+PORT=26450
+
+LT_LOCAL_HOST=127.0.0.1
+API_PORT=26450
+
+###########################################
+# TEMP TUNNEL
+###########################################
+
+TEMP_TUNNEL_ENABLED=true
+TEMP_TUNNEL_PORT=26450
+TEMP_TUNNEL_LOCAL_HOST=127.0.0.1
+
 ```
 
 ------
