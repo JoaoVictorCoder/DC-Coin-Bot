@@ -10,7 +10,8 @@
 # :memo: Requirements
 
   - [Node.JS](https://nodejs.org/en/download/)
-  - [Git](https://git-scm.com/downloads)
+  - [Git(Optional)](https://git-scm.com/downloads)
+  - [CloudFlare(Optional)](https://github.com/cloudflare/cloudflared/releases)
 
 # :computer: Install instructions
 
@@ -66,6 +67,9 @@
       ```
 
 - How to setup the cloudflare tunnel (you will need to enable this in .env and buy a domain in cloudflare);
+
+Please put the Cloudflare binary file in the cloudflared folder of the project!
+Download here: https://github.com/cloudflare/cloudflared/releases
 
 If you are using linux:
 
