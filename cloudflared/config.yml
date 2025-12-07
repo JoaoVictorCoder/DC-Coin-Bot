@@ -1,0 +1,8 @@
+tunnel: coin-bot
+credentials-file: ./coin-bot.json   # ou o nome do .json que você tem
+origincert: ./cert.pem
+
+ingress:
+  - hostname: coin.your_domain.me
+    service: http://localhost:26450
+  - service: http_status:404
