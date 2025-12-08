@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Coin — Terms of Use</title>
+  <style>
+    :root{
+      --bg:#2f3136;
+      --panel:#2f3136;
+      --muted:#99a0a6;
+      --text:#dfe6ee;
+      --accent:#7289da;
+      --glass: rgba(255,255,255,0.02);
+      --radius:12px;
+      --pad:24px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+      --max-width:1100px;
+      --code-bg: rgba(0,0,0,0.35);
+      --card-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      background: linear-gradient(180deg, #161618 0%, #0f1011 100%);
+      color:var(--text);
+      font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      font-size:15px;
+      line-height:1.6;
+    }
+
+    .overlay {
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:36px;
+      box-sizing:border-box;
+    }
+
+    .embed {
+      width:100%;
+      max-width:var(--max-width);
+      border-radius:var(--radius);
+      background: linear-gradient(180deg, rgba(47,49,54,0.98), rgba(31,33,36,0.98));
+      box-shadow: var(--card-shadow), inset 0 1px rgba(255,255,255,0.02);
+      overflow:hidden;
+      display:flex;
+      gap:0;
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+
+    .stripe {
+      width:10px;
+      background: linear-gradient(180deg, #6b9bff 0%, var(--accent) 100%);
+      flex:0 0 10px;
+    }
+
+    .content {
+      padding:var(--pad);
+      box-sizing:border-box;
+      flex:1 1 auto;
+      display:flex;
+      flex-direction:column;
+      min-height:420px;
+      max-height:84vh;
+    }
+
+    .header {
+      display:flex;
+      align-items:flex-start;
+      gap:16px;
+      margin-bottom:6px;
+    }
+    .titles { flex:1 1 auto; }
+    .title {
+      margin:0;
+      font-size:20px;
+      font-weight:700;
+      color:var(--text);
+    }
+    .subtitle {
+      margin:6px 0 0 0;
+      font-size:13px;
+      color:var(--muted);
+    }
+
+    .meta-links {
+      margin-top:10px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .meta-links a {
+      color: var(--accent);
+      text-decoration:none;
+      font-size:13px;
+      border: 1px solid rgba(255,255,255,0.02);
+      padding:6px 10px;
+      border-radius:8px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+    }
+
+    .doc-body {
+      margin-top:12px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.06));
+      padding:18px;
+      border-radius:10px;
+      overflow:auto;
+      box-shadow: inset 0 1px rgba(255,255,255,0.01);
+      flex:1 1 auto;
+    }
+
+    .toc {
+      margin:0 0 16px 0;
+      padding:12px;
+      border-radius:8px;
+      background: rgba(0,0,0,0.12);
+      border:1px solid rgba(255,255,255,0.02);
+      color:var(--muted);
+      font-size:14px;
+    }
+    .toc h4 { margin:0 0 8px 0; color:var(--text); font-size:14px; }
+    .toc ol { margin:0; padding-left:20px; }
+    .toc a { color:var(--accent); text-decoration:none; }
+
+    .section { margin-bottom:18px; }
+    .section h2 {
+      margin:0 0 8px 0;
+      font-size:17px;
+      color:var(--text);
+      border-bottom:1px solid rgba(255,255,255,0.02);
+      padding-bottom:8px;
+    }
+    .section p { margin:0 0 10px 0; color:var(--muted); }
+    .section ul { margin:8px 0 0 18px; color:var(--muted); }
+
+    pre, code { font-family: var(--mono); font-size:13px; }
+    pre {
+      background: var(--code-bg);
+      padding:12px;
+      border-radius:8px;
+      overflow:auto;
+      color: #e6eef6;
+      border:1px solid rgba(255,255,255,0.03);
+      margin:12px 0;
+      position:relative;
+    }
+    code.inline {
+      background: rgba(0,0,0,0.25);
+      padding:3px 6px;
+      border-radius:6px;
+      color:var(--text);
+    }
+
+    .muted { color:var(--muted); }
+    .label {
+      display:inline-block;
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:6px;
+      background:rgba(0,0,0,0.18);
+      color:var(--muted);
+      border:1px solid rgba(255,255,255,0.02);
+      margin-right:8px;
+    }
+
+    .footer {
+      margin-top:12px;
+      font-size:13px;
+      color:var(--muted);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    @media (max-width:820px){
+      :root { --pad:16px; }
+      .content { padding:16px; }
+    }
+    @media (max-width:640px){
+      .embed { border-radius:10px; margin:6px; }
+      .stripe { display:none; }
+    }
+
+    /* small helper for highlighted notices */
+    .notice {
+      background: rgba(114,137,218,0.06);
+      border:1px solid rgba(114,137,218,0.08);
+      padding:10px 12px;
+      border-radius:8px;
+      color:var(--muted);
+      margin:10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay" role="dialog" aria-labelledby="termsTitle">
+    <div class="embed" role="document" aria-label="Coin Terms of Use">
+      <div class="stripe" aria-hidden="true"></div>
+
+      <div class="content">
+        <div class="header">
+          <div class="titles">
+            <h1 id="termsTitle" class="title">Terms of Use — Coin Platform</h1>
+            <div class="subtitle">Usage rules, responsibilities, and legal notes for the Coin service and related integrations.</div>
+
+            <div class="meta-links" style="margin-top:10px;">
+              <a href="/" rel="noreferrer">Coin Website</a>
+              <a href="/terms/privacy.html" rel="noreferrer">Privacy Policy</a>
+              <a href="/terms/documentation.html" rel="noreferrer">API Documentation</a>
+              <a href="/terms/" rel="noreferrer">Terms of Use</a>
+              <a href="https://github.com/FoxUshiha/DC-Coin-Bot" rel="noreferrer">GitHub Repo</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="doc-body" id="docBody">
+
+          <div class="toc" aria-label="Table of contents">
+            <h4>Contents</h4>
+            <ol>
+              <li><a href="#proper-use">Proper Use</a></li>
+              <li><a href="#fair-use">Fair Use</a></li>
+              <li><a href="#user-resp">User Responsibility</a></li>
+              <li><a href="#trans-accuracy">Transaction Accuracy</a></li>
+              <li><a href="#card-rules">Card Usage Rules</a></li>
+              <li><a href="#rate-limits">Rate Limits & API Restrictions</a></li>
+              <li><a href="#service-integrity">Service Integrity & Security Testing</a></li>
+              <li><a href="#discord-compliance">Discord Compliance</a></li>
+              <li><a href="#conduct">Behavior & Conduct</a></li>
+              <li><a href="#content-restrictions">Content Restrictions</a></li>
+              <li><a href="#stability">Stability & Abuse Prevention</a></li>
+              <li><a href="#third-party">Third-Party Usage & Liability</a></li>
+              <li><a href="#cloudflare">Cloudflare Compliance</a></li>
+              <li><a href="#updates">Updates to These Guidelines</a></li>
+            </ol>
+          </div>
+
+          <section id="proper-use" class="section">
+            <h2>1. Proper Use</h2>
+            <p class="muted">
+              You must use the platform, bot, API, card system and all related services responsibly and as intended.
+              Do not attempt to exploit, damage, overload, bypass, reverse-engineer, or interfere with any functionality.
+            </p>
+          </section>
+
+          <section id="fair-use" class="section">
+            <h2>2. Fair Use</h2>
+            <p class="muted">
+              Actions that degrade service quality, disrupt other users, or misuse automation are prohibited.
+              Botting, scripting, spamming, mass requests or automated abuse is disallowed unless explicitly authorized.
+            </p>
+          </section>
+
+          <section id="user-resp" class="section">
+            <h2>3. User Responsibility</h2>
+            <p class="muted">
+              You are fully responsible for your account, card codes, sessions, tokens, and all actions performed under your access.
+              Protect your credentials at all times — sharing access or exposing sensitive information may lead to loss of funds or account compromise.
+            </p>
+          </section>
+
+          <section id="trans-accuracy" class="section">
+            <h2>4. Transaction Accuracy</h2>
+            <p class="muted">
+              Always verify recipient IDs, card codes, and amounts before sending any transaction. Transactions are final once processed.
+              The platform does not guarantee recovery for mistakes caused by user error.
+            </p>
+          </section>
+
+          <section id="card-rules" class="section">
+            <h2>5. Card Usage Rules</h2>
+            <p class="muted">
+              Your Coin Card code is private and must not be shared publicly. Any transaction performed using your card code is considered authorized by you.
+              If you leak your code, you are responsible for any resulting loss.
+            </p>
+            <p class="muted" style="margin-top:8px;">
+              Note: Card codes may be treated as API keys — do not expose them in public repositories or front-end code.
+            </p>
+          </section>
+
+          <section id="rate-limits" class="section">
+            <h2>6. Rate Limits & API Restrictions</h2>
+            <p class="muted">
+              Respect rate limits, cooldowns, and system safeguards. Do not exceed API request limits or attempt to circumvent protection mechanisms.
+              High-volume or abusive usage may trigger automatic blocking or throttling.
+            </p>
+          </section>
+
+          <section id="service-integrity" class="section">
+            <h2>7. Service Integrity & Security Testing</h2>
+            <p class="muted">
+              Do not probe, scan, or test infrastructure for vulnerabilities without explicit permission. Unauthorized security testing is forbidden.
+              Attempts to exploit the system — intentional or accidental — may result in permanent access loss.
+            </p>
+          </section>
+
+          <section id="discord-compliance" class="section">
+            <h2>8. Discord Compliance</h2>
+            <p class="muted">
+              When interacting with the Discord bot, you must comply with Discord's Terms of Service, Community Guidelines, and Developer Policies.
+              Violations of Discord rules may result in restrictions on the use of the bot or related services.
+            </p>
+          </section>
+
+          <section id="conduct" class="section">
+            <h2>9. Behavior & Conduct</h2>
+            <p class="muted">
+              The services must not be used for harassment, threats, fraud, impersonation, or malicious behavior.
+              Respect other users and the communities where the bot operates.
+            </p>
+          </section>
+
+          <section id="content-restrictions" class="section">
+            <h2>10. Content Restrictions</h2>
+            <p class="muted">
+              Do not use the bot, site, or API to distribute illegal, harmful, or unauthorized content.
+              Activities that may cause legal consequences for you or the platform are strictly prohibited.
+            </p>
+          </section>
+
+          <section id="stability" class="section">
+            <h2>11. Stability & Abuse Prevention</h2>
+            <p class="muted">
+              Do not intentionally perform actions that overload, destabilize, or degrade the service.
+              Mass operations, forced concurrency, or actions intended to saturate the queue are prohibited.
+            </p>
+          </section>
+
+          <section id="third-party" class="section">
+            <h2>12. Third-Party Usage & Legal Responsibility</h2>
+            <p class="muted">
+              This platform is not legally responsible for how the API, bot, or currency system is used inside third-party applications, servers, bots, websites, or external integrations.
+              If a third party uses Coins as a medium of exchange for illegal, harmful, prohibited, or unauthorized content, the responsibility lies with those external operators.
+            </p>
+            <p class="muted" style="margin-top:8px;">
+              The Coin platform does not supervise, monitor, or validate third-party implementations, and cannot be held liable for violations or damages resulting from external misuse.
+            </p>
+          </section>
+
+          <section id="cloudflare" class="section">
+            <h2>13. Cloudflare Compliance</h2>
+            <p class="muted">
+              Platform operation may leverage Cloudflare infrastructure and protections. All usage must comply with Cloudflare's Terms of Service and Acceptable Use Policy.
+              Users are responsible for ensuring their traffic patterns and integrations respect Cloudflare rules; the platform is not liable for penalties or blocks resulting from violations by users.
+            </p>
+          </section>
+
+          <section id="updates" class="section">
+            <h2>14. Updates to These Guidelines</h2>
+            <p class="muted">
+              These terms and usage rules may be changed or expanded at any time. Continued use of the service constitutes acceptance of updated terms.
+            </p>
+          </section>
+
+          <div class="notice">
+            <strong>Important:</strong> By using Coin services (website, bot, API, card system), you acknowledge and agree to follow these rules. Failure to comply may lead to access restrictions or legal actions.
+          </div>
+
+          <div class="footer">
+            <div class="muted">Source: original terms file provided by Fox Oficial</div>
+            <div class="muted">Last updated: <strong>2025-12-07</strong></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

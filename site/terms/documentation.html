@@ -1,0 +1,451 @@
+<!doctype html>
+
+<html lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Coin — API Docs</title>
+  <style>
+    :root{
+      --bg: #2f3136;
+      --panel: #202225;
+      --embed: #2f3136;
+      --muted: #99a0a6;
+      --text: #dfe6ee;
+      --accent: #7289da;
+      --glass: rgba(255,255,255,0.02);
+      --radius: 12px;
+      --pad: 24px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+      --max-width: 1100px;
+      --code-bg: rgba(0,0,0,0.35);
+      --card-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+
+html,body{ height:100%; margin:0; background: linear-gradient(180deg, #232428 0%, #1d1f22 100%); color:var(--text); font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; font-size:15px; line-height:1.55; }
+
+.overlay { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px; box-sizing:border-box; }
+.embed { width:100%; max-width:var(--max-width); border-radius:var(--radius); background: linear-gradient(180deg, rgba(47,49,54,0.98), rgba(31,33,36,0.98)); box-shadow: var(--card-shadow), inset 0 1px rgba(255,255,255,0.02); overflow:hidden; display:flex; gap:0; border:1px solid rgba(255,255,255,0.02); }
+.stripe { width:10px; background: linear-gradient(180deg, #6b9bff 0%, var(--accent) 100%); flex:0 0 10px; }
+.content { padding:var(--pad); box-sizing:border-box; flex:1 1 auto; display:flex; flex-direction:column; min-height:420px; max-height:80vh; }
+.header { display:flex; align-items:flex-start; gap:16px; margin-bottom:8px; }
+.titles { flex:1 1 auto; }
+.title { margin:0; font-size:20px; font-weight:700; color:var(--text); }
+.subtitle { margin:4px 0 0 0; font-size:13px; color:var(--muted); }
+.meta-links { margin-top:10px; display:flex; gap:12px; flex-wrap:wrap; }
+.meta-links a { color: var(--accent); text-decoration:none; font-size:13px; border: 1px solid rgba(255,255,255,0.02); padding:6px 10px; border-radius:8px; background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00)); }
+
+.doc-body { margin-top:12px; background: linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.06)); padding:18px; border-radius:10px; overflow:auto; box-shadow: inset 0 1px rgba(255,255,255,0.01); flex:1 1 auto; }
+.toc { margin:0 0 18px 0; padding:12px; border-radius:8px; background: rgba(0,0,0,0.12); border:1px solid rgba(255,255,255,0.02); color:var(--muted); font-size:14px; }
+.toc a { color: var(--accent) !important; text-decoration: none; }
+.toc a:hover { color: #8fb1ff !important; }
+.section { margin-bottom:20px; }
+.section h2 { margin:0 0 8px 0; font-size:17px; color:var(--text); border-bottom:1px solid rgba(255,255,255,0.02); padding-bottom:8px; }
+pre, code { font-family: var(--mono); font-size:13px; }
+pre { background: var(--code-bg); padding:12px; border-radius:8px; overflow:auto; color: #e6eef6; border:1px solid rgba(255,255,255,0.03); margin:12px 0; position:relative; }
+code.inline { background: rgba(0,0,0,0.25); padding:3px 6px; border-radius:6px; color:var(--text); }
+.label { display:inline-block; font-size:12px; padding:4px 8px; border-radius:6px; background:rgba(0,0,0,0.12); color:var(--muted); border:1px solid rgba(255,255,255,0.02); margin-right:8px; }
+.json-sample { margin:8px 0 18px 0; }
+.footer { margin-top:12px; font-size:13px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+
+@media (max-width:820px){ :root { --pad:16px; } .content { padding:18px; } }
+@media (max-width:640px){ .embed { border-radius:10px; margin:6px; } .stripe { display:none; } }
+
+
+  </style>
+</head>
+<body>
+  <div class="overlay" role="dialog" aria-labelledby="docTitle">
+    <div class="embed" role="document" aria-label="Coin API Documentation">
+      <div class="stripe" aria-hidden="true"></div>
+
+
+  <div class="content">
+    <div class="header">
+      <div class="titles">
+        <h1 id="docTitle" class="title">Coin API — Implementation-matching Reference</h1>
+        <div class="subtitle">Exact request/response shapes and behavior derived from <code class="inline">api.js</code> and <code class="inline">logic.js</code>.</div>
+        <div class="meta-links" style="margin-top:10px;">
+          <a href="/" rel="noreferrer">Coin Website</a>
+          <a href="/terms/privacy.html" rel="noreferrer">Privacy Policy</a>
+          <a href="/terms/documentation.html" rel="noreferrer">API Documentation</a>
+          <a href="/terms/" rel="noreferrer">Terms of Use</a>
+          <a href="https://github.com/FoxUshiha/DC-Coin-Bot" rel="noreferrer">GitHub Repo</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="doc-body" id="docBody">
+
+      <div class="toc" aria-label="Table of contents">
+        <h4>Table of contents</h4>
+        <ol>
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#auth">Authentication</a></li>
+          <li><a href="#queue">Queue & idempotency</a></li>
+          <li><a href="#endpoints">Endpoints (complete & exact)</a></li>
+          <li><a href="#txid">txId: generation & when responses include it</a></li>
+          <li><a href="#examples">Concrete examples</a></li>
+          <li><a href="#errors">Errors & status codes</a></li>
+          <li><a href="#appendix">Appendix — op names</a></li>
+        </ol>
+      </div>
+
+      <section id="overview" class="section">
+        <h2>1) Overview</h2>
+        <p>This documentation mirrors the exact behavior implemented in the server files you provided (<code>api.js</code> and <code>logic.js</code>).</p>
+        <p>Key architecture: the HTTP API enqueues write operations into a bounded in-memory queue (with optional DB persistence for pending jobs) and then either waits for the queue worker result (preferred) or returns a legacy-shaped response for backward compatibility. The queue attaches a <code>txId</code> to payloads for idempotency; whether that <code>txId</code> appears in the HTTP response depends on per-route mapping rules implemented in <code>doEnqueueAndMap</code>. See <strong>Queue & idempotency</strong> below for exact mapping rules. (source: <code>api.js</code>, <code>logic.js</code>).
+        </p>
+      </section>
+
+      <section id="auth" class="section">
+        <h2>2) Authentication</h2>
+        <p>Endpoints that require authentication use an Authorization header with a session token:</p>
+        <pre><code>Authorization: Bearer &lt;sessionId&gt;
+
+
+Content-Type: application/json</code></pre> <p>The middleware resolves the session using <code>db.getSession</code> and sets <code>req.userId</code>. If session lookup fails the route returns <code>403</code> with legacy error shapes. (see <code>/api/login</code> to create sessions). fileciteturn1file12 fileciteturn1file6</p> </section>
+
+
+      <section id="queue" class="section">
+        <h2>3) Queue & idempotency</h2>
+        <p>Important implementation details (exact):</p>
+        <ul>
+          <li>The server uses <code>queue.enqueueAndWait(payload)</code>. Before enqueueing, <code>doEnqueueAndMap</code> ensures <code>payload.args.ip</code> is set and attaches <code>payload.txId</code> = a random UUID if not provided. (see <code>api.js</code>) fileciteturn1file12</li>
+          <li>If the queue refuses with <code>ENQUEUE_REJECTED</code> the wrapper will attempt an in-memory cache and a DB pending-job. If that also fails, the API returns <code>429</code> / <code>{ error: "QUEUE_FULL" }</code>. The cache worker will later flush pending items into the queue. fileciteturn1file10</li>
+          <li>Per-route legacy mapping: when <code>doEnqueueAndMap</code> is called with <code>{ legacyReturn: 'transfer' }</code> the API responds with <code>{ success: true }</code> on success (hides txId). When called with <code>{ legacyReturn: 'transfer_card' }</code> the API will return <code>{ success: true, txId?, date? }</code> if the worker result contains a <code>txId</code>, otherwise it returns <code>{ success: true }</code>. Other endpoints return the worker result as-is by default. fileciteturn1file10</li>
+        </ul>
+      </section>
+
+      <section id="endpoints" class="section">
+        <h2>4) Endpoints (complete & exact)</h2>
+
+        <article style="margin-top:12px;">
+          <h3>POST /api/login</h3>
+          <p>Body: <code>{ username, password }</code> (server hashes password before checking). Returns sessionCreated + sessionId + userId + saldo + cooldownRemainingMs per <code>logic.login</code>.</p>
+          <pre><code>Request body:
+
+
+{
+"username": "alice",
+"password": "secret"
+}
+
+Response (success):
+{
+"sessionCreated": true,
+"passwordCorrect": true,
+"userId": "123456789012345678",
+"sessionId": "<session-token>",
+"saldo": 12.345678,
+"cooldownRemainingMs": 0
+} </code></pre> <p>Notes: the server enforces IP registration/login protections (see <code>logic.login</code>) including IP try counts and blocking windows. fileciteturn1file1</p> </article>
+
+
+        <article style="margin-top:12px;">
+          <h3>POST /api/register</h3>
+          <p>Creates a user. Body: <code>{ username, password }</code>. Server may enforce "one-registration-per-IP" within 24h. On success returns <code>{ success:true, userId, sessionId }</code> (session created server-side). fileciteturn1file1</p>
+          <pre><code>Request:
+
+
+{ "username": "bob", "password": "s3cret" }
+
+Response:
+{ "success": true, "userId": "987654321", "sessionId": "<session-token>" } </code></pre> </article>
+
+
+        <article id="transfer-auth" style="margin-top:12px;">
+          <h3>POST /api/transfer — authenticated transfer (legacy response)</h3>
+          <p>Headers: <code>Authorization: Bearer &lt;sessionId&gt;</code>. Body: <code>{ toId, amount }</code>. This route enqueues <code>op: 'transfer'</code> with <code>args: { from: req.userId, to, amount }</code>. The legacy behavior is to return <code>{ success: true }</code> on success and <strong>not</strong> include the <code>txId</code> in the HTTP response (even though the queue payload has a <code>txId</code> internally). Use one of the alternatives below if you need the txId. fileciteturn1file12</p>
+
+          <pre><code>Request (auth):
+
+
+Authorization: Bearer <sessionId>
+{
+"toId": "987654321",
+"amount": 0.01234567
+}
+
+Response:
+{ "success": true } </code></pre>
+
+
+          <p>Alternatives to obtain <code>txId</code>:
+            <ol>
+              <li>Provide <code>txId</code> in the request body yourself — the server will keep it for idempotency (it sets <code>payload.txId</code> only if not provided).</li>
+              <li>If you can persist the pending job record (DB), correlate it to the eventual transaction when the worker finalizes and write the txId into your tracking table (server may persist pending jobs into DB if configured).</li>
+              <li>Use card-based endpoints (which may return <code>txId</code>) or <code>GET /api/tx/:txid</code> once you have the id. fileciteturn1file10</li>
+            </ol>
+          </p>
+
+        </article>
+
+        <article id="transfer-card" style="margin-top:12px;">
+          <h3>POST /api/transfer/card — transfer using a card code</h3>
+          <p>Body: <code>{ cardCode, toId, amount }</code>. This route hashes the cardCode to find the ownerId, ensures recipient user exists, enqueues <code>op: 'transfer_card'</code>, and uses legacyReturn <code>'transfer_card'</code>. That means:
+            <ul>
+              <li>If the worker result contains <code>txId</code> (common when DB helper supports atomic transfer & returns txId) the HTTP response will be <code>{ success:true, txId, date }</code>.</li>
+              <li>If the worker result does not include <code>txId</code>, the response will fall back to legacy <code>{ success:true }</code>.
+            </ul>
+          </p>
+
+          <pre><code>Request:
+
+
+{ "cardCode": "abcd-efgh-1234", "toId": "11111", "amount": 0.01 }
+
+Response (if txId available):
+{ "success": true, "txId": "uuid-12345-abcdef", "date": "2025-12-07T12:00:00.000Z" }
+
+Response (legacy fallback):
+{ "success": true } </code></pre>
+
+
+          <p>Notes: server truncates amounts to 8 decimals (sats) before enqueueing. Card lookup helpers may be named <code>db.getCardOwnerByHash</code> or similar. fileciteturn1file9</p>
+        </article>
+
+        <article id="card-pay" style="margin-top:12px;">
+          <h3>POST /api/card/pay or /api/transfer_between_cards — card-to-card payment</h3>
+          <p>Body: <code>{ fromCard, toCard, amount }</code>. Server enqueues <code>op: 'transfer_between_cards'</code> and uses the same legacy mapping as <code>transfer_card</code>, returning <code>txId</code> when the worker returns it, otherwise <code>{ success:true }</code>. Amounts truncated to 8 decimals. fileciteturn1file18</p>
+
+          <pre><code>Request:
+
+
+{ "fromCard": "abcd-ef", "toCard": "wxyz-12", "amount": 0.002 }
+
+Possible response:
+{ "success": true, "txId": "uuid-xxxxx", "date": "2025-12-07T12:01:00.000Z" } </code></pre> </article>
+
+
+        <article id="claim" style="margin-top:12px;">
+          <h3>POST /api/claim — faucet / reward claim</h3>
+          <p>Headers: <code>Authorization: Bearer &lt;sessionId&gt;</code>. Enqueues <code>op: 'claim'</code> (args: { userId }). The API calls the queue directly via <code>queue.enqueueAndWait</code> for claim, and then returns the worker result <em>as-is</em>. The worker (<code>logic.claimCoins</code>) will try to use an atomic DB helper (<code>claimReward</code>) if available; as a fallback it will add coins, set cooldown, and insert a transaction record internally. However, <strong>claimCoins returns only the domain result (e.g. <code>{ success:true, claimed: X }</code>) and intentionally does not expose the internal txId</strong>. If you need the txId for claims you must correlate via server-side pending-job records or change the logic to return txId. fileciteturn1file4</p>
+
+          <pre><code>Request (auth):
+
+
+Authorization: Bearer <sessionId>
+Body: {}
+
+Response (success):
+{ "success": true, "claimed": 0.05 }
+
+Response (cooldown):
+{ "error": "Cooldown active" } </code></pre> </article>
+
+
+        <article id="tx-lookup" style="margin-top:12px;">
+          <h3>GET /api/tx/:txid — lookup transaction</h3>
+          <p>Use to retrieve transaction info when you have a <code>txId</code>. This route delegates to <code>logic.checkTransaction</code> which uses DB helpers <code>getTransaction|getTransactionById</code>. Response shape:</p>
+          <pre><code>Response (found):
+
+
+{
+"success": true,
+"tx": {
+"id": "uuid-12345",
+"date": "2025-12-07T12:00:00.000Z",
+"from": "11111",
+"to": "22222",
+"amountSats": 12345,
+"amountCoins": "0.00012345"
+}
+}
+
+Response (not found):
+{ "success": false, "errorCode": "INVALID_TRANSACTION", "message": "Transaction not found" } </code></pre> <p>Notes: <code>amountSats</code> is the integer internal representation (satoshis). The public string amount <code>amountCoins</code> mirrors the DB column. fileciteturn1file4</p> </article>
+
+
+        <article id="transactions" style="margin-top:12px;">
+          <h3>GET /api/transactions?userId=&lt;id&gt;&page=&lt;n&gt; — list transactions (paginated)</h3>
+          <p>Returns <code>{ transactions: [ { id, date, from_id, to_id, amount } ], page }</code> where <code>amount</code> is in coins (string/float formatted via <code>fromSats</code>). The API enqueues or delegates to logic.getTransactions. fileciteturn1file16</p>
+
+          <pre><code>Response:
+
+
+{
+"transactions": [
+{ "id": "tx-1", "date": "2025-12-07T12:00:00.000Z", "from_id": "11111", "to_id": "22222", "amount": "0.001" }
+],
+"page": 1
+} </code></pre> </article>
+
+
+        <article id="cards" style="margin-top:12px;">
+          <h3>GET /api/card/info (or similar helpers) & POST /api/card/reset</h3>
+          <p>The server exposes card helpers via queue ops: <code>get_card</code> (returns <code>{ cardCode }</code>) and <code>reset_card</code> (returns <code>{ newCode }</code>). Implementation delegates to <code>logic.getCardCode</code> and <code>logic.resetUserCard</code> which call DB helpers. These endpoints usually are protected by auth. fileciteturn1file10</p>
+        </article>
+
+        <article id="backup" style="margin-top:12px;">
+          <h3>Backup endpoints</h3>
+          <p>Operations: create/list/restore backups. They use <code>logic.createBackup</code>, <code>logic.listBackups</code>, <code>logic.restoreBackup</code>. Examples:</p>
+          <pre><code>POST /api/backup/create  (auth)
+
+
+-> returns: { success: true }  (or an array of codes when createBackup returns codes)
+
+GET /api/backup/list (auth)
+-> returns: { backups: ["code1","code2"] }
+
+POST /api/backup/restore (body: { backupId: "..." }, auth)
+-> returns: { success: true } on success </code></pre> <p>Notes: Restore consumes the backup code and will transfer the full balance from the original owner to the requester (see <code>logic.restoreBackup</code>). There are checks to avoid restoring your own backup and to ensure the source wallet has funds. fileciteturn1file7</p> </article>
+
+
+        <article id="bills" style="margin-top:12px;">
+          <h3>Billing endpoints (create / pay / list)</h3>
+          <p>Ops supported: <code>bill_create</code>, <code>bill_pay</code>, <code>bill_list</code>, and card variants <code>bill_create_card</code>, <code>bill_pay_card</code>. Examples:</p>
+          <pre><code>POST /api/bill/create  (body: { toId, amount, time? })
+
+
+-> { success: true, billId: "..." }
+
+POST /api/bill/pay  (auth, body: { billId })
+-> { success: true }
+
+POST /api/bill/create/card  (body: { fromCard?, toCard?, amount, time? })
+-> returns logic result (e.g. { success:true, billId })
+
+POST /api/bill/pay/card  (body: { cardCode, billId })
+-> { success:true } or { success:false, error: '...' } </code></pre> <p>Card bill flows resolve owner ids from card codes and reuse the bill logic. fileciteturn1file6</p> </article>
+
+
+        <article id="queue-info" style="margin-top:12px;">
+          <h3>Queue inspection (optional)</h3>
+          <p>If <code>EXPOSE_INTERNALS</code> is enabled then:</p>
+          <pre><code>GET /api/queue/info  -> { queued, usedBytes, maxBytes, maxOpsPerSecond }
+
+
+GET /api/queue/status/:id -> { state, ts, result? } </code></pre> <p>Useful to debug pending items or to correlate a client-side stored <code>txId</code> with the queue status. fileciteturn1file18</p> </article>
+
+
+      </section>
+
+      <section id="txid" class="section">
+        <h2>5) txId: generation & when responses include it</h2>
+        <ul>
+          <li>Every enqueued payload receives a <code>payload.txId</code> (UUID) for idempotency; the server will only set it if the client didn't provide one. This is implemented in <code>doEnqueueAndMap</code>. fileciteturn1file10</li>
+          <li>Whether the HTTP response includes the <code>txId</code> depends on the route mapping rules:
+            <ul>
+              <li><code>legacyReturn: 'transfer'</code> &rarr; response is always <code>{ success:true }</code> (txId hidden).</li>
+              <li><code>legacyReturn: 'transfer_card'</code> &rarr; response is <code>{ success:true, txId?, date? }</code> if worker result contains a txId; otherwise <code>{ success:true }</code>.
+              </li>
+              <li>Default behavior (no legacyReturn) &rarr; returns the worker result as-is (which may include txId if the logic function returned it). Examples: some logic functions like <code>transferCoins</code> return <code>{ txId, date }</code> when DB helpers provide it. fileciteturn1file4
+            </ul>
+          </li>
+          <li>If you must always receive the txId for a transfer, either provide it yourself in the request body or modify the server mapping (in <code>doEnqueueAndMap</code>) to include <code>payload.txId</code> in the response for transfers. fileciteturn1file17</li>
+        </ul>
+      </section>
+
+      <section id="examples" class="section">
+        <h2>6) Concrete examples (requests & responses)</h2>
+
+        <h4>cURL — authenticated transfer (legacy)</h4>
+        <pre><code>curl -X POST "https://your.host/api/transfer" \
+
+
+-H "Authorization: Bearer <sessionId>" 
+-H "Content-Type: application/json" 
+-d '{"toId":"987654321","amount":0.001}'
+
+Response:
+{ "success": true } </code></pre>
+
+
+        <h4>cURL — transfer using card (may return txId)</h4>
+        <pre><code>curl -X POST "https://your.host/api/transfer/card" \
+
+
+-H "Content-Type: application/json" 
+-d '{"cardCode":"abcd-efgh-1234","toId":"11111","amount":0.01}'
+
+Possible response:
+{ "success": true, "txId": "uuid-12345-abcdef", "date": "2025-12-07T12:00:00.000Z" }
+
+Or (legacy fallback):
+{ "success": true } </code></pre>
+
+
+        <h4>Node (fetch) — claim</h4>
+        <pre><code>await fetch('https://your.host/api/claim', {
+
+
+method: 'POST',
+headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer <sessionId>' }
+}).then(r => r.json()) // -> { success: true, claimed: 0.05 } </code></pre>
+
+
+        <h4>GET tx lookup</h4>
+        <pre><code>curl -X GET "https://your.host/api/tx/uuid-12345-abcdef"
+
+
+Response:
+{
+"success": true,
+"tx": {
+"id": "uuid-12345-abcdef",
+"date": "2025-12-07T12:00:00.000Z",
+"from": "11111",
+"to": "22222",
+"amountSats": 12345,
+"amountCoins": "0.00012345"
+}
+} </code></pre>
+
+
+      </section>
+
+      <section id="errors" class="section">
+        <h2>7) Errors & mappings</h2>
+        <ul>
+          <li><strong>429</strong> — rate-limit exceeded or queue full: <code>{ error: "RATE_LIMIT_EXCEEDED" }</code> or <code>{ error: "QUEUE_FULL" }</code>. The wrapper tries caching/persistence before returning 429. fileciteturn1file10</li>
+          <li><strong>400</strong> — invalid parameters: <code>{ error: 'Invalid parameters' }</code>.</li>
+          <li><strong>403</strong> — auth failure: legacy responses often return <code>{ error: 'operation failed' }</code> with HTTP 403.</li>
+          <li><strong>404</strong> — resource not found (eg. card owner not found) or invalid tx lookup.</li>
+          <li><strong>504</strong> — queue wait timeout: <code>{ error: 'QUEUE_TIMEOUT' }</code> (or legacy code mapping).</li>
+          <li><strong>500</strong> — internal server error: generic <code>{ error: 'Internal error' }</code> or <code>{ success: false, error: 'Internal error' }</code> depending on route.</li>
+        </ul>
+      </section>
+
+      <section id="appendix" class="section">
+        <h2>8) Appendix — op names & developer notes</h2>
+        <pre><code>Queue operations (payload.op values used by the API):
+
+
+login, register, logout, account_change, account_unregister, account_update,
+transfer, transfer_card, claim, claim_status, get_card, reset_card,
+backup_create, backup_list, backup_restore,
+get_balance, rank, total_users, tx_lookup, transactions,
+bill_list, bill_list_from, bill_list_to, bill_create, bill_pay,
+card_info, card_claim, transfer_between_cards,
+bill_create_card, bill_pay_card </code></pre> <p class="muted">Developer note: to change whether a route returns <code>txId</code>, edit <code>doEnqueueAndMap</code> mapping in <code>api.js</code>. The server already provides a recommended path: supply your own <code>txId</code> in the request to keep control of idempotency and later correlate with <code>/api/tx/:txid</code>. fileciteturn1file10</p>
+
+
+        <div class="footer">
+          <div class="muted">This documentation was generated to match the behavior in your <code>api.js</code> and <code>logic.js</code> files.</div>
+          <div class="muted">Last updated: <!-- injected at serve time if desired --> </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+
+  </div>
+
+  <script>
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-target');
+        const el = document.getElementById(id);
+        if (!el) return;
+        const text = el.textContent;
+        try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied ✓'; setTimeout(()=>btn.textContent='Copy',1400); }
+        catch { const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); btn.textContent='Copied ✓'; } catch {} ta.remove(); setTimeout(()=>btn.textContent='Copy',1400); }
+      });
+    });
+  </script>
+
+</body>
+</html>
