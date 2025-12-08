@@ -631,6 +631,16 @@ app.get('/site/', (req, res) => res.sendFile(INDEX_HTML));
 app.get('/', (req, res) => res.sendFile(INDEX_HTML));
 app.use('/', express.static(SITE_DIR));
 
+// servir /site/terms/ como diretório
+const TERMS_DIR = path.join(SITE_DIR, 'terms');
+app.use('/site/terms', express.static(TERMS_DIR));
+
+// opcional: servir index.html quando acessar /site/terms/
+app.get('/terms/', (req, res) => {
+  res.sendFile(path.join(TERMS_DIR, 'terms.html'));
+});
+
+
 // helper: get IP
 function getRequestIp(req) {
   return (req.ip || (req.connection && req.connection.remoteAddress) || 'unknown').toString();
