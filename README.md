@@ -87,6 +87,14 @@ cloudflared tunnel login
 
 cloudflared login
 ```
+Create the json config "coin-bot.json":
+```
+cloudflared tunnel --config=coin-bot.json run
+```
+Put those files renamed as coin-bot.json and cert.perm in the cloudflared folder.
+
+And before start the project, use...
+
 Create a tunnel:
 ```
 cloudflared tunnel create tunnel_name
@@ -103,6 +111,8 @@ ingress:
   - service: http_status:404
 
 ```
+When those files are created, the prompt returns the file location for you to seach UwO
+
 All the times you run those commands, the console will show you where the files appear, and you need to go there to copy them and paste in the cloudflared folder of the project.
 You will need to rename the files as your config.yml is listening.
 
