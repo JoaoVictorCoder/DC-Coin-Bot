@@ -688,15 +688,30 @@ async function doEnqueueAndMap(req, res, payload, opts = {}) {
       if (!res.headersSent) return res.json({ success: true });
       return;
     }
-    if (opts.legacyReturn === 'transfer_card') {
-      // old card transfer returned { success:true, txId?, date? }
-      if (result && result.txId) {
-        if (!res.headersSent) return res.json({ success: true, txId: result.txId, date: result.date || new Date().toISOString() });
-        return;
-      }
-      if (!res.headersSent) return res.json({ success: true });
-      return;
-    }
+if (opts.legacyReturn === 'transfer_card') {
+  // legacy shape expected: { success: true, txId?, date? }
+  const errField = result && (result.error || result.err || result.message);
+  const txid = result && (result.txId || result.tx_id || result.txid || result.tx);
+
+  // Accept success only when result indicates explicit success OR a txid is present
+  if (result && (result.success === true || txid)) {
+    const out = { success: true };
+    if (txid) out.txId = txid;
+    if (result.date) out.date = result.date;
+    else out.date = new Date().toISOString();
+    if (!res.headersSent) return res.json(out);
+    return;
+  }
+
+  // Otherwise return a clear failure payload and appropriate HTTP status
+  let status = 400;
+  if (errField === 'FROM_CARD_NOT_FOUND' || errField === 'TO_CARD_NOT_FOUND') status = 404;
+  if (errField === 'INSUFFICIENT_FUNDS' || errField === 'INSUFFICIENT_BALANCE') status = 402;
+
+  const payload = { success: false, error: errField || 'transfer_failed', raw: result };
+  if (!res.headersSent) return res.status(status).json(payload);
+  return;
+}
     // default: return result as-is (used by many endpoints in old api)
     if (!res.headersSent) return res.json(result);
     return;
