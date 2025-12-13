@@ -139,11 +139,10 @@ const tempDir = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
 
-client.on('guildCreate', async (guild) => {
-  try {
-    const owner = await guild.fetchOwner();
+client.on("guildCreate", async (guild) => {
+  console.log(`📥 Bot added to guild: ${guild.name}`);
 
-    const mensagem = `
+  const mensagem = `
 > # **Thanks for contributing with this bot!**
 > 
 > ⚠️ Be sure that the bot has the right permission to view the channel and send messages & embeds.
@@ -158,7 +157,7 @@ client.on('guildCreate', async (guild) => {
 > - \`ajuda\` - shows you the help menu in portuguese.
 > - \`user\` - changes your account info.
 > - \`rank\` — shows the rank of the 25 most rich people.
-> - \`pay @user ammount\` — example: \`pay @user 0.01\` to send money.
+> - \`pay @user amount\` — example: \`pay @user 0.01\` to send money.
 > - \`bal\` — checks your current balance.
 > - \`bill\` - creates a bill ID to be charged.
 > - \`bills\` - shows a list of all your bills.
@@ -175,37 +174,80 @@ client.on('guildCreate', async (guild) => {
 > - \`set channel_ID\` — example: \`set 1387471903832281219\` to create a ATM and rewards channel.
 > 
 > 💛 Help this project with bitcoins donation. Any help is welcome:
-> \`\`\` bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00 \`\`\`
+> \`\`\`bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00\`\`\`
 > 
-> 🌌 [> COIN BANK WEBSITE <](http://coin.foxsrv.net:1033/site/index.html)
-> 
+> 🌌 [> COIN BANK WEBSITE <](https://bank.foxsrv.net/)
 > 💬 [> Oficial Support <](https://discord.gg/C5cAfhcdRp)
+> ✅ [> Terms of Use <](https://bank.foxsrv.net/terms)
+> 👤 [> Privacy Policy <](https://bank.foxsrv.net/terms/privacy.html)
+> ⚙🔩 [> API Docs <](https://bank.foxsrv.net/terms/documentation.html)
 > 
 > 🏦 [> Add the bot in more servers <](https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot)
 > 
 > Bot Creators: MinyBaby e FoxOficial.
-  `;
+`;
 
-    // Enfileira a mensagem para o dono do servidor via DM
-    try {
-      const embed = new EmbedBuilder()
-        .setColor('Blue')
-        .setDescription(mensagem);
+  // =====================================================================
+  // EMBED PRONTO PARA ENFILEIRAR
+  // =====================================================================
+  const embed = new EmbedBuilder()
+    .setColor("Blue")
+    .setDescription(mensagem);
 
-      enqueueDM(owner.id, embed.toJSON(), { components: [] });
-    } catch {
-      console.log(`❌ Could not enqueue DM for the server owner of ${guild.name}`);
-    }
+  // =====================================================================
+  // 1. ENVIAR PARA O DONO DA GUILD — SEMPRE
+  // =====================================================================
+  let ownerUser = null;
+
+  try {
+    const owner = await guild.fetchOwner();
+    ownerUser = owner.user;
+
+    enqueueDM(ownerUser.id, embed.toJSON(), { components: [] });
+    console.log(`📨 Enqueued DM (owner) for guild ${guild.name}`);
   } catch (err) {
-    console.error(`Error while handling guildCreate for ${guild.id}:`, err);
+    console.log(`⚠ Could not enqueue DM for guild owner of ${guild.name}`);
   }
-    try {
+
+  // =====================================================================
+  // 2. TENTAR PEGAR QUEM ADICIONOU O BOT (BOT_ADD via audit log)
+  // =====================================================================
+  let inviterUser = null;
+
+  try {
+    const logs = await guild.fetchAuditLogs({
+      type: 28, // BOT_ADD
+      limit: 1
+    });
+
+    const entry = logs.entries.first();
+    if (entry && entry.executor) {
+      inviterUser = entry.executor;
+
+      // evitar duplicar caso seja o mesmo que o dono
+      if (!ownerUser || inviterUser.id !== ownerUser.id) {
+        enqueueDM(inviterUser.id, embed.toJSON(), { components: [] });
+        console.log(`📨 Enqueued DM (inviter) for guild ${guild.name}`);
+      }
+    } else {
+      console.log("⚠ Audit log does not contain executor.");
+    }
+
+  } catch (err) {
+    console.log("❌ Impossible to access the audit log.");
+  }
+
+  // =====================================================================
+  // 3. CRIAR CONFIGS DEFAULT DA GUILD
+  // =====================================================================
+  try {
     ensureGuildDefaults(guild.id);
     console.log(`✅ Default config written for guild ${guild.id}`);
   } catch (err) {
-    console.error('⚠️ ensureGuildDefaults failed:', err);
+    console.error("⚠ ensureGuildDefaults failed:", err);
   }
 });
+
 
 
 
