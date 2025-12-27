@@ -180,7 +180,8 @@ client.on("guildCreate", async (guild) => {
 > 💬 [> Oficial Support <](https://discord.gg/C5cAfhcdRp)
 > ✅ [> Terms of Use <](https://bank.foxsrv.net/terms)
 > 👤 [> Privacy Policy <](https://bank.foxsrv.net/terms/privacy.html)
-> ⚙🔩 [> API Docs <](https://bank.foxsrv.net/terms/documentation.html)
+> 🔩 [> API Docs <](https://bank.foxsrv.net/terms/documentation.html)
+> 🔐 [> Browser Extension <](https://chromewebstore.google.com/detail/coin-bank/lbojdaalcfajcjphlpphjchkenjpbemf)
 > 
 > 🏦 [> Add the bot in more servers <](https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot)
 > 
