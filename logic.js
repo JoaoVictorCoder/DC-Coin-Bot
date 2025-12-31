@@ -92,12 +92,12 @@ async function authenticate(userId, sessionId, passwordHash) {
 // LOGIN - retorna sessão criada, saldo e cooldown restantes
 async function login(username, passwordHash, ipAddress) {
   if (!ipAddress) {
-    throw new Error('IP não informado ao chamar login()');
+    throw new Error('IP did not appear on login()');
   }
 
   const now = Date.now();
   const maxAttempts = 3;
-  const blockWindow = 5 * 60 * 1000; // 5 minutos
+  const blockWindow = 1 * 1000; // 5 minutos
 
   const normalizedIp = normalizeIp(ipAddress);
   // 1) Carrega registro de tentativas deste IP (type = 1)
@@ -246,8 +246,8 @@ async function registerUser(username, password, clientIp) {
 
   // 1) bloqueio por registro recente (type=2 < 24h)
   const rec = typeof getIp === 'function' ? getIp(ipKey) : null;
-  if (rec && rec.type === 2 && now - rec.time < 24 * 60 * 60 * 1000) {
-    throw new Error('Block: only one account per IP every 24 hours.');
+  if (rec && rec.type === 2 && now - rec.time < 1 * 1000) {
+    throw new Error('Block: only one account per IP every 1 sec.');
   }
 
   // 2) username duplicado?
@@ -830,7 +830,7 @@ setInterval(() => {
 
 // startup cleanup
 try { cleanOldTransactions(); } catch (e) { /* ignore if helper missing */ }
-setInterval(() => { try { cleanOldTransactions(); } catch (e) {} }, 1 * 60 * 60 * 1000);
+setInterval(() => { try { cleanOldTransactions(); } catch (e) {} }, 10 * 60 * 1000);
 
 async function getTotalUsers() {
   const all = getAllUsers();
@@ -1006,6 +1006,34 @@ async function payBillByCard(cardCode, billId) {
     return { success: false, error: (err && err.message) ? err.message : String(err) };
   }
 }
+
+// ================================
+// 🧹 AUTO CLEANUP — TRANSACTIONS
+// Remove transactions older than 90 days
+// Runs every 10 minutes
+// ================================
+
+const TEN_MINUTES = 10 * 60 * 1000;
+
+try {
+  cleanOldTransactions(); // cleanup inicial no boot
+} catch (e) {
+  console.warn('⚠️ Initial transaction cleanup failed:', e.message);
+}
+
+setInterval(() => {
+  try {
+    const removed = cleanOldTransactions();
+    if (removed > 0) {
+      console.log(`🧹 Cleaned ${removed} transactions older than 90 days.`);
+    }
+  } catch (e) {
+    console.error('❌ Transaction cleanup failed:', e);
+  }
+}, TEN_MINUTES);
+
+// inicia automaticamente ao carregar o logic.js
+startOldTransactionsCleanup();
 
 
 

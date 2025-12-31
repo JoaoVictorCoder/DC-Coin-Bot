@@ -570,60 +570,15 @@ function dbGetCooldown(id) {
 }
 
 // === Limpeza automática de histórico antigo (90 dias) ===
-async function cleanOldTransactions() {
-  const sql = `DELETE FROM transactions WHERE date < datetime('now','-90 days')`;
+function cleanOldTransactions(maxAgeMs = 90 * 24 * 60 * 60 * 1000) {
+  const cutoff = Date.now() - maxAgeMs;
 
-  try {
-    // 1) sqlite3 (callback-style): db.run(sql, callback)
-    if (typeof db.run === 'function' && db.run.length >= 2) {
-      await new Promise((resolve, reject) => {
-        db.run(sql, function (err) {
-          if (err) return reject(err);
-          // aqui `this.changes` existe no sqlite3 callback-style
-          const changes = typeof this.changes === 'number' ? this.changes : 0;
-          console.log(`[DB] Histórico limpo. ${changes} registros removidos.`);
-          resolve();
-        });
-      });
-      return;
-    }
+  const info = db.prepare(`
+    DELETE FROM transactions
+    WHERE strftime('%s', date) * 1000 < ?
+  `).run(cutoff);
 
-    // 2) wrapper promise-based: db.run(sql) retornando Promise/objeto com .changes
-    if (typeof db.run === 'function') {
-      // alguns wrappers (ex: node-sqlite) retornam um objeto com .changes
-      const res = await db.run(sql);
-      const changes = res && (res.changes ?? res.changes === 0 ? res.changes : undefined);
-      if (typeof changes === 'number') {
-        console.log(`[DB] Histórico limpo. ${changes} registros removidos.`);
-      } else {
-        console.log('[DB] Histórico limpo (db.run).');
-      }
-      return;
-    }
-
-    // 3) better-sqlite3: db.prepare(...).run() -> retorna { changes, lastInsertRowid }
-    if (typeof db.prepare === 'function') {
-      const stmt = db.prepare(sql);
-      const info = stmt.run();
-      const changes = info && typeof info.changes === 'number' ? info.changes : 0;
-      console.log(`[DB] Histórico limpo. ${changes} registros removidos.`);
-      return;
-    }
-
-    // 4) fallback para db.exec (sync ou promise)
-    if (typeof db.exec === 'function') {
-      const maybePromise = db.exec(sql);
-      if (maybePromise && typeof maybePromise.then === 'function') {
-        await maybePromise;
-      }
-      console.log('[DB] Histórico limpo (exec).');
-      return;
-    }
-
-    console.error('[DB] Não foi possível executar limpeza: objeto `db` não possui métodos conhecidos (run/prepare/exec).');
-  } catch (err) {
-    console.error('[DB] Erro inesperado na limpeza do histórico:', err);
-  }
+  return info.changes;
 }
 
 function getTransactionById(txId) {
