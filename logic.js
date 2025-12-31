@@ -1032,8 +1032,6 @@ setInterval(() => {
   }
 }, TEN_MINUTES);
 
-// inicia automaticamente ao carregar o logic.js
-startOldTransactionsCleanup();
 
 
 
