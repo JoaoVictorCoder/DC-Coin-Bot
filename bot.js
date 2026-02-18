@@ -1692,21 +1692,47 @@ if (cmd === 'claim') {
   // ------------------------------------------------------------
   // !rank
   // ------------------------------------------------------------
-  if (cmd === 'rank') {
-    try {
-      const { fromSats, getAllUsers, getUser } = require('./database');
+if (cmd === 'rank') {
+  try {
+    const {
+      fromSats,
+      getAllUsers,
+      getUser
+    } = require('./database');
 
-      const todos = getAllUsers();
-      const totalAccounts = todos.length;
+    const {
+      EmbedBuilder,
+      ActionRowBuilder,
+      ButtonBuilder,
+      ButtonStyle,
+      ComponentType
+    } = require('discord.js');
 
-      const top25 = [...todos]
-        .sort((a, b) => b.coins - a.coins)
-        .slice(0, 25);
+    const todos = getAllUsers();
+    const totalAccounts = todos.length;
+
+    if (!todos.length) {
+      return message.reply('No coin holders yet.');
+    }
+
+    const sorted = [...todos].sort((a, b) => b.coins - a.coins);
+    const totalEconomy = sorted.reduce((acc, cur) => acc + cur.coins, 0);
+
+    const pageSize = 25;
+    const totalPages = Math.ceil(sorted.length / pageSize);
+    let currentPage = 0;
+
+    async function generateEmbed(page) {
+      const start = page * pageSize;
+      const end = start + pageSize;
+      const slice = sorted.slice(start, end);
 
       let descricao = '';
-      for (let i = 0; i < top25.length; i++) {
-        const entry = top25[i];
+
+      for (let i = 0; i < slice.length; i++) {
+        const entry = slice[i];
         const dbRecord = getUser(entry.id);
+
         let displayName;
 
         if (dbRecord && dbRecord.username) {
@@ -1720,27 +1746,91 @@ if (cmd === 'claim') {
           }
         }
 
-        descricao += `**${i + 1}.** ${displayName} — **${fromSats(entry.coins)} coins**\n`;
+        descricao += `**${start + i + 1}.** ${displayName} — **${fromSats(entry.coins)} coins**\n`;
       }
 
-      const totalEconomy = todos.reduce((acc, cur) => acc + cur.coins, 0);
-      descricao += `\n💰 **Global:** ${fromSats(totalEconomy)} **coins**`;
-      descricao += `\n**Total Accounts:** ${totalAccounts} **users**`;
+      descricao += `\n💰 **Global:** ${fromSats(totalEconomy)} coins`;
+      descricao += `\n👥 **Total Accounts:** ${totalAccounts} users`;
+      descricao += `\n📄 **Page:** ${page + 1}/${totalPages}`;
 
-      await message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor('Blue')
-            .setTitle('🏆 TOP 25')
-            .setDescription(descricao || 'No coin holders yet.')
-        ]
-      });
-
-    } catch (err) {
-      console.error('❌ Command error !rank:', err);
-      try { await message.reply('❌ Error !rank. Try again later.'); } catch {}
+      return new EmbedBuilder()
+        .setColor('Blue')
+        .setTitle('🏆 Global Rank')
+        .setDescription(descricao || 'No data.');
     }
+
+    function getButtons(page) {
+      return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('rank_prev')
+          .setLabel('⬅ Previous Page')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page === 0),
+
+        new ButtonBuilder()
+          .setCustomId('rank_next')
+          .setLabel('Next Page ➡')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page >= totalPages - 1)
+      );
+    }
+
+    const sentMessage = await message.reply({
+      embeds: [await generateEmbed(currentPage)],
+      components: [getButtons(currentPage)]
+    });
+
+    const collector = sentMessage.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      time: 10 * 60 * 1000 // 🔥 10 minutos
+    });
+
+    collector.on('collect', async interaction => {
+      try {
+        if (interaction.user.id !== message.author.id) {
+          return interaction.reply({
+            content: 'You cannot use these buttons.',
+            ephemeral: true
+          });
+        }
+
+        // 🔥 RESPONDE IMEDIATAMENTE (evita erro 10062)
+        await interaction.deferUpdate();
+
+        if (interaction.customId === 'rank_prev' && currentPage > 0) {
+          currentPage--;
+        }
+
+        if (interaction.customId === 'rank_next' && currentPage < totalPages - 1) {
+          currentPage++;
+        }
+
+        await sentMessage.edit({
+          embeds: [await generateEmbed(currentPage)],
+          components: [getButtons(currentPage)]
+        });
+
+      } catch (err) {
+        console.error('Rank interaction error:', err);
+      }
+    });
+
+    collector.on('end', async () => {
+      try {
+        await sentMessage.edit({
+          components: []
+        });
+      } catch {}
+    });
+
+  } catch (err) {
+    console.error('❌ Command error !rank:', err);
+    try {
+      await message.reply('❌ Error !rank. Try again later.');
+    } catch {}
   }
+}
+
 
 }); // fim do client.on('messageCreate', ...)
 

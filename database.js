@@ -570,7 +570,7 @@ function dbGetCooldown(id) {
 }
 
 // === Limpeza automática de histórico antigo (90 dias) ===
-function cleanOldTransactions(maxAgeMs = 90 * 24 * 60 * 60 * 1000) {
+function cleanOldTransactions(maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
   const cutoff = Date.now() - maxAgeMs;
 
   const info = db.prepare(`

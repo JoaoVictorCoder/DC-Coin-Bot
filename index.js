@@ -27,7 +27,7 @@ async function safeStartBot() {
       return null;
     }
   } catch (err) {
-    console.error('[index] Erro ao iniciar bot:', err);
+    console.error('[index] Bot starting error:', err);
     return null;
   }
 }
@@ -45,7 +45,7 @@ async function getClientFromBotModule() {
 }
 
 (async () => {
-  console.log('[index] iniciando...');
+  console.log('[index] starting...');
 
   let server;
   let tunnelHandle = null;
@@ -54,7 +54,7 @@ async function getClientFromBotModule() {
   try {
     // 1) Start API server and wait until it's listening
     server = await startApiServer();
-    console.log('[index] API server iniciado.');
+    console.log('[index] API server started.');
 
     // 2) Start bot (may return client or not)
     botClient = await safeStartBot();
@@ -67,14 +67,14 @@ async function getClientFromBotModule() {
     if (botClient && botClient.once) {
       // se o client emitir ready, aguarda e então inicializa a dmQueue
       botClient.once?.('ready', () => {
-        console.log(`[index] Bot pronto: ${botClient.user ? botClient.user.tag : '(user unknown)'}`);
+        console.log(`[index] Bot started: ${botClient.user ? botClient.user.tag : '(user unknown)'}`);
         try {
           if (typeof processDMQueue === 'function') {
             processDMQueue(botClient);
-            console.log('[index] dmQueue inicializada com client.');
+            console.log('[index] dmQueue stated.');
           }
         } catch (err) {
-          console.warn('[index] falha ao iniciar dmQueue:', err);
+          console.warn('[index] failure at starting dmQueue:', err);
         }
       });
     } else {
@@ -82,34 +82,34 @@ async function getClientFromBotModule() {
       if (typeof processDMQueue === 'function') {
         try {
           processDMQueue(botClient);
-          console.log('[index] dmQueue chamada (client pode ser null).');
+          console.log('[index] dmQueue call (can be null).');
         } catch (err) {
-          console.warn('[index] dmQueue falhou (client ausente):', err);
+          console.warn('[index] dmQueue failed (client missing):', err);
         }
       }
     }
 
     // 3) Start permanent cloudflared tunnel (reads CLOUDFLARE_HOSTNAME and PORT or options)
     try {
-      console.log('[index] iniciando túnel permanente (cloudflared) — pasta:', CLOUD_DIR);
+      console.log('[index] starting permanent tunnel (cloudflared) — folder:', CLOUD_DIR);
       const res = await startTunnel();
       tunnelHandle = res && res.child ? res.child : null;
       if (res && res.urlHint) {
         console.log('[index] cloudflared hint url:', res.urlHint);
       } else {
-        console.log('[index] cloudflared iniciado (sem url trycloudflare).');
+        console.log('[index] cloudflared started (no url trycloudflare).');
       }
     } catch (err) {
-      console.warn('[index] falha ao iniciar túnel cloudflared:', err && err.message ? err.message : err);
+      console.warn('[index] failed at starting cloudflared:', err && err.message ? err.message : err);
       // não abortar: API e bot ainda podem funcionar localmente
     }
 
     // 4) everything started — keep running, wait for signals
     process.on('SIGINT', async () => {
-      console.log('[index] SIGINT recebido. Encerrando...');
+      console.log('[index] SIGINT received. Exiting...');
       try {
         if (server && typeof server.close === 'function') {
-          console.log('[index] fechando servidor HTTP...');
+          console.log('[index] closing HTTP server...');
           await new Promise(r => server.close(r));
         }
       } catch (e) { /* ignore */ }
@@ -117,7 +117,7 @@ async function getClientFromBotModule() {
       try {
         // tenta desmontar bot (caso exista)
         if (botClient && typeof botClient.destroy === 'function') {
-          console.log('[index] destruindo client do bot...');
+          console.log('[index] turning bot off...');
           try { botClient.destroy(); } catch(e){}
         }
       } catch (e) {}
@@ -125,7 +125,7 @@ async function getClientFromBotModule() {
       try {
         // stopTunnel exported function will kill the child if present
         const stopped = stopTunnel();
-        if (stopped) console.log('[index] cloudflared parado.');
+        if (stopped) console.log('[index] cloudflared stopped.');
       } catch (e) {}
 
       // ensure process exits
@@ -142,7 +142,7 @@ async function getClientFromBotModule() {
     });
 
   } catch (err) {
-    console.error('[index] Erro durante startup:', err);
+    console.error('[index] Startup error:', err);
     // ensure tunnel killed if started
     try { stopTunnel(); } catch(e){}
     process.exit(1);
