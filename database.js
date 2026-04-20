@@ -1223,6 +1223,39 @@ function transferAtomicWithTxIdSafe(fromId, toId, amountSats, txId) {
 }
 
 /**
+ * Salva o saldo do usuário no dia atual (1–30)
+ * @param {string} userId
+ * @param {number} balance (em coins OU sats, você decide)
+ */
+function updateDailyGraph(userId, balance) {
+  try {
+    if (!userId) return;
+
+    // pega o dia do mês (1–31 → limitamos a 30)
+    let day = new Date().getDate();
+    if (day > 30) day = 30;
+
+    const column = `d${day}`;
+
+    // garante que o usuário existe na tabela
+    db.prepare(`
+      INSERT OR IGNORE INTO user_grafic (user_id)
+      VALUES (?)
+    `).run(userId);
+
+    // atualiza o dia atual
+    db.prepare(`
+      UPDATE user_grafic
+      SET ${column} = ?
+      WHERE user_id = ?
+    `).run(balance, userId);
+
+  } catch (err) {
+    console.error('❌ [database.js] updateDailyGraph error:', err);
+  }
+}
+
+/**
  * enqueueDM(userId, embedObj, rowObj)
  * Compatível com o estilo antigo (embedObj + rowObj) e com callers que passam
  * (payload, options). Garante que embed_json e row_json nunca sejam NULL.
@@ -1355,7 +1388,7 @@ module.exports = {
   // dm queue
   enqueueDM, getNextDM, deleteDM, dbGetCooldown,
   // logic
-  getIpRecord, getUserGraphData,
+  getIpRecord, getUserGraphData, updateDailyGraph,
   insertIpTry,
   updateIpTry,
   updateIpTime, transferAtomicWithTxIdSafe,
