@@ -24,7 +24,7 @@
   2. Install dependecies
   ```
   npm install
-  npm install discord.js sqlite3 p-queue uuid node-fetch fs-extra yaml dotenv qrcode express better-sqlite3 fs-extra
+  npm install discord.js sqlite3 p-queue uuid node-fetch fs-extra yaml dotenv qrcode express better-sqlite3 fs-extra chartjs-node-canvas
   ```
 
   3. Create a application
