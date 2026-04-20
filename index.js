@@ -143,6 +143,115 @@ async function getClientFromBotModule() {
   }
 })();
 
+const { getAllUsers, db } = require('./database');
+
+async function updateAllUserGraphs() {
+  try {
+    console.log('[grafic] updating user graphs...');
+
+    const users = getAllUsers();
+    if (!users || users.length === 0) return;
+
+    const now = Date.now();
+    const days = 30;
+    const msDay = 24 * 60 * 60 * 1000;
+    const cutoff = new Date(now - days * msDay).toISOString();
+
+    // prepara query uma vez (performance)
+    const txStmt = db.prepare(`
+      SELECT date, from_id, to_id, amount
+      FROM transactions
+      WHERE date >= ?
+      AND (from_id = ? OR to_id = ?)
+      ORDER BY date DESC
+    `);
+
+    for (const user of users) {
+      const userId = user.id;
+
+      try {
+        let currentBalance = Number(user.coins || 0);
+
+        // pega transações recentes
+        const txs = txStmt.all(cutoff, userId, userId);
+
+        // array de 30 dias (saldo)
+        const daily = new Array(30).fill(0);
+
+        // começa do saldo atual
+        let balance = currentBalance;
+
+        // índice do dia atual
+        let dayIndex = 29;
+        daily[dayIndex] = balance;
+
+        let lastDay = Math.floor(now / msDay);
+
+        for (const tx of txs) {
+          const txTime = new Date(tx.date).getTime();
+          const txDay = Math.floor(txTime / msDay);
+
+          // volta dias se necessário
+          while (lastDay > txDay && dayIndex > 0) {
+            dayIndex--;
+            daily[dayIndex] = balance;
+            lastDay--;
+          }
+
+          // reverte transação (porque estamos voltando no tempo)
+          if (tx.from_id === userId) {
+            balance += tx.amount;
+          } else if (tx.to_id === userId) {
+            balance -= tx.amount;
+          }
+        }
+
+        // preenche dias restantes
+        while (dayIndex > 0) {
+          dayIndex--;
+          daily[dayIndex] = balance;
+        }
+
+        // salva no banco
+        const fields = [];
+        const values = [];
+
+        for (let i = 0; i < 30; i++) {
+          fields.push(`d${i + 1} = ?`);
+          values.push(daily[i]);
+        }
+
+        db.prepare(`
+          INSERT INTO user_grafic (user_id)
+          VALUES (?)
+          ON CONFLICT(user_id) DO UPDATE SET
+          ${fields.join(', ')}
+        `).run(userId, ...values);
+
+      } catch (err) {
+        console.error(`[grafic] user ${userId} error:`, err);
+      }
+    }
+
+    console.log('[grafic] update finished.');
+
+  } catch (err) {
+    console.error('[grafic] fatal error:', err);
+  }
+}
+
+function startGraphUpdater() {
+  // roda imediatamente
+  updateAllUserGraphs();
+
+  // roda a cada 5 minutos
+  setInterval(() => {
+    updateAllUserGraphs();
+  }, 5 * 60 * 1000);
+}
+
+startGraphUpdater();
+
 const { startTempTunnel, stopTempTunnel } = require('./tempTunnel');
 
 (async () => {
