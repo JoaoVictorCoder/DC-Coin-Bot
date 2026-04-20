@@ -269,12 +269,32 @@ client.on('messageCreate', async (message) => {
   // ------------------------------------------------------------
   // !bal
   // ------------------------------------------------------------
-  if (cmd === 'bal') {
+if (cmd === 'bal') {
     try {
       const { getUser, fromSats } = require('./database');
       const user = getUser(message.author.id);
       const balance = fromSats(user.coins);
-      return await message.reply(`> 💰 Balance: ${balance} coins.`);
+      const embed = new EmbedBuilder()
+        .setColor('Green')
+        .setTitle(`💼 Saldo de ${message.author.tag}`)
+        .setDescription(`💰 **${balance} coins**`);
+      return await message.reply({ embeds: [embed] });
+    } catch (err) {
+      console.error('❌ Error in !bal handler:', err);
+      try { await message.reply('❌ Falha ao carregar o saldo.'); } catch {}
+    }
+  }
+
+  if (cmd === 'balance') {
+    try {
+      const { getUser, fromSats } = require('./database');
+      const user = getUser(message.author.id);
+      const balance = fromSats(user.coins);
+      const embed = new EmbedBuilder()
+        .setColor('Green')
+        .setTitle(`💼 Saldo de ${message.author.tag}`)
+        .setDescription(`💰 **${balance} coins**`);
+      return await message.reply({ embeds: [embed] });
     } catch (err) {
       console.error('❌ Error in !bal handler:', err);
       try { await message.reply('❌ Falha ao carregar o saldo.'); } catch {}
@@ -311,7 +331,7 @@ client.on('messageCreate', async (message) => {
 
       const embed = new EmbedBuilder()
         .setColor('Green')
-        .setTitle(`💼 Saldo de ${target.tag}`)
+        .setTitle(`💼 Balance of ${target.tag}`)
         .setDescription(`💰 **${fromSats(record.coins)} coins**`);
 
       await message.reply({ embeds: [embed] });
