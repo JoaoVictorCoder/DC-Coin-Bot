@@ -64,76 +64,69 @@ async function getClientFromBotModule() {
       botClient = await getClientFromBotModule();
     }
 
-    if (botClient && botClient.once) {
-      // se o client emitir ready, aguarda e então inicializa a dmQueue
-      botClient.once?.('ready', () => {
+    // ✅ CORREÇÃO: só inicia dmQueue quando o bot estiver pronto
+    if (botClient && typeof botClient.once === 'function') {
+      botClient.once('ready', () => {
         console.log(`[index] Bot started: ${botClient.user ? botClient.user.tag : '(user unknown)'}`);
+
         try {
           if (typeof processDMQueue === 'function') {
             processDMQueue(botClient);
-            console.log('[index] dmQueue stated.');
+            console.log('[index] dmQueue started.');
           }
         } catch (err) {
           console.warn('[index] failure at starting dmQueue:', err);
         }
       });
     } else {
-      // se não tiver client, tenta iniciar dmQueue sem client (alguns projetos aceitam)
-      if (typeof processDMQueue === 'function') {
-        try {
-          processDMQueue(botClient);
-          console.log('[index] dmQueue call (can be null).');
-        } catch (err) {
-          console.warn('[index] dmQueue failed (client missing):', err);
-        }
-      }
+      console.warn('[index] botClient is null — dmQueue will NOT start');
     }
 
-    // 3) Start permanent cloudflared tunnel (reads CLOUDFLARE_HOSTNAME and PORT or options)
+    // 3) Start permanent cloudflared tunnel
     try {
       console.log('[index] starting permanent tunnel (cloudflared) — folder:', CLOUD_DIR);
+
       const res = await startTunnel();
       tunnelHandle = res && res.child ? res.child : null;
+
       if (res && res.urlHint) {
         console.log('[index] cloudflared hint url:', res.urlHint);
       } else {
         console.log('[index] cloudflared started (no url trycloudflare).');
       }
+
     } catch (err) {
       console.warn('[index] failed at starting cloudflared:', err && err.message ? err.message : err);
-      // não abortar: API e bot ainda podem funcionar localmente
     }
 
-    // 4) everything started — keep running, wait for signals
+    // 4) shutdown handling
     process.on('SIGINT', async () => {
       console.log('[index] SIGINT received. Exiting...');
+
       try {
         if (server && typeof server.close === 'function') {
           console.log('[index] closing HTTP server...');
           await new Promise(r => server.close(r));
         }
-      } catch (e) { /* ignore */ }
+      } catch {}
 
       try {
-        // tenta desmontar bot (caso exista)
         if (botClient && typeof botClient.destroy === 'function') {
           console.log('[index] turning bot off...');
-          try { botClient.destroy(); } catch(e){}
+          try { botClient.destroy(); } catch {}
         }
-      } catch (e) {}
+      } catch {}
 
       try {
-        // stopTunnel exported function will kill the child if present
         const stopped = stopTunnel();
         if (stopped) console.log('[index] cloudflared stopped.');
-      } catch (e) {}
+      } catch {}
 
-      // ensure process exits
       process.exit(0);
     });
 
-    // catch unhandled rejections for nicer logs (não substitui tratamento adequado nos módulos)
-    process.on('unhandledRejection', (reason, p) => {
+    // logs globais
+    process.on('unhandledRejection', (reason) => {
       console.error('[index] unhandledRejection:', reason);
     });
 
@@ -143,8 +136,9 @@ async function getClientFromBotModule() {
 
   } catch (err) {
     console.error('[index] Startup error:', err);
-    // ensure tunnel killed if started
-    try { stopTunnel(); } catch(e){}
+
+    try { stopTunnel(); } catch {}
+
     process.exit(1);
   }
 })();
