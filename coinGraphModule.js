@@ -1,5 +1,5 @@
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
-const db = require('./database'); // ajuste o caminho se necessário
+const db = require('./database');
 
 // tamanho do gráfico
 const width = 900;
@@ -8,13 +8,19 @@ const height = 400;
 const chartCanvas = new ChartJSNodeCanvas({
   width,
   height,
-  backgroundColour: "#2b2d31" // Discord dark
+  backgroundColour: "#2b2d31"
 });
 
-/**
- * Gera gráfico diretamente do banco
- * @param {string} userId
- */
+// formata satoshis → coin (sem quebrar)
+function formatCoins(sats) {
+  if (!sats) return "0.00000000";
+
+  const coins = sats / 100_000_000;
+
+  // remove zeros desnecessários MAS mantém precisão
+  return coins.toFixed(8).replace(/\.?0+$/, '');
+}
+
 async function generateUserGraph(userId) {
   try {
     const { labels, values } = db.getUserGraphData(userId);
@@ -36,8 +42,7 @@ async function generateUserGraph(userId) {
             tension: 0.4,
             pointRadius: 3,
 
-            // 🎨 estilo dark Discord
-            borderColor: "#5865F2", // blurple
+            borderColor: "#5865F2",
             backgroundColor: "rgba(88, 101, 242, 0.2)"
           }
         ]
@@ -48,6 +53,13 @@ async function generateUserGraph(userId) {
           legend: {
             labels: {
               color: "#ffffff"
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `💰 ${formatCoins(context.raw)} coins`;
+              }
             }
           }
         },
@@ -62,7 +74,10 @@ async function generateUserGraph(userId) {
           },
           y: {
             ticks: {
-              color: "#b5bac1"
+              color: "#b5bac1",
+              callback: function(value) {
+                return formatCoins(value);
+              }
             },
             grid: {
               color: "rgba(255,255,255,0.05)"
@@ -77,7 +92,6 @@ async function generateUserGraph(userId) {
   } catch (err) {
     console.error('❌ [graph] generateUserGraph error:', err);
 
-    // fallback simples (evita crash do bot)
     const fallbackConfig = {
       type: "line",
       data: {
@@ -92,6 +106,7 @@ async function generateUserGraph(userId) {
     return await chartCanvas.renderToBuffer(fallbackConfig);
   }
 }
+
 
 
 module.exports = {
