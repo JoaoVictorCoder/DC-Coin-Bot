@@ -119,6 +119,43 @@ db.exec(`
   `);
 ;
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_grafic (
+    user_id TEXT PRIMARY KEY,
+
+    d1  REAL DEFAULT 0,
+    d2  REAL DEFAULT 0,
+    d3  REAL DEFAULT 0,
+    d4  REAL DEFAULT 0,
+    d5  REAL DEFAULT 0,
+    d6  REAL DEFAULT 0,
+    d7  REAL DEFAULT 0,
+    d8  REAL DEFAULT 0,
+    d9  REAL DEFAULT 0,
+    d10 REAL DEFAULT 0,
+    d11 REAL DEFAULT 0,
+    d12 REAL DEFAULT 0,
+    d13 REAL DEFAULT 0,
+    d14 REAL DEFAULT 0,
+    d15 REAL DEFAULT 0,
+    d16 REAL DEFAULT 0,
+    d17 REAL DEFAULT 0,
+    d18 REAL DEFAULT 0,
+    d19 REAL DEFAULT 0,
+    d20 REAL DEFAULT 0,
+    d21 REAL DEFAULT 0,
+    d22 REAL DEFAULT 0,
+    d23 REAL DEFAULT 0,
+    d24 REAL DEFAULT 0,
+    d25 REAL DEFAULT 0,
+    d26 REAL DEFAULT 0,
+    d27 REAL DEFAULT 0,
+    d28 REAL DEFAULT 0,
+    d29 REAL DEFAULT 0,
+    d30 REAL DEFAULT 0
+  );
+`);
+
 // 3) Garante os índices (novos ou existentes)
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ips_type ON ips(type);
@@ -874,6 +911,41 @@ function resetDmQueueSequence() {
   }
 }
 
+function getUserGraphData(userId) {
+  try {
+    let row = db.prepare(`
+      SELECT * FROM user_grafic
+      WHERE user_id = ?
+    `).get(userId);
+
+    if (!row) {
+      db.prepare(`
+        INSERT INTO user_grafic (user_id)
+        VALUES (?)
+      `).run(userId);
+
+      row = db.prepare(`
+        SELECT * FROM user_grafic
+        WHERE user_id = ?
+      `).get(userId);
+    }
+
+    const labels = [];
+    const values = [];
+
+    for (let i = 1; i <= 30; i++) {
+      labels.push(`Day ${i}`);
+      values.push(Number(row[`d${i}`] || 0));
+    }
+
+    return { labels, values };
+
+  } catch (err) {
+    console.error('❌ [database.js] getUserGraphData error:', err);
+    return { labels: [], values: [] };
+  }
+}
+
 // --- já deve existir no seu database.js, mas caso não exista: ---
 // getNextDM()
 // deleteDM()
@@ -1283,7 +1355,7 @@ module.exports = {
   // dm queue
   enqueueDM, getNextDM, deleteDM, dbGetCooldown,
   // logic
-  getIpRecord,
+  getIpRecord, getUserGraphData,
   insertIpTry,
   updateIpTry,
   updateIpTime, transferAtomicWithTxIdSafe,
