@@ -301,6 +301,64 @@ if (cmd === 'bal') {
     }
   }
 
+  if (cmd === 'grafic') {
+  try {
+    const { generateUserGraph } = require('./coinGraphModule'); // ajuste caminho
+    const path = require('path');
+    const fs = require('fs');
+    const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+
+    const userId = message.author.id;
+
+    // 📁 pasta temp
+    const tempDir = path.join(__dirname, 'temp');
+    const fileName = `${userId}_graph.png`;
+    const filePath = path.join(tempDir, fileName);
+
+    // garante pasta
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // 📊 gera gráfico
+    const buffer = await generateUserGraph(userId);
+
+    // 💾 salva
+    fs.writeFileSync(filePath, buffer);
+
+    const attachment = new AttachmentBuilder(filePath, {
+      name: fileName
+    });
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle(`📊 Balance of ${message.author.tag}`)
+      .setDescription('Last 30 days performance')
+      .setImage(`attachment://${fileName}`)
+      .setFooter({
+        text: `User ID: ${userId}`
+      });
+
+    await message.reply({
+      embeds: [embed],
+      files: [attachment]
+    });
+
+    // 🧹 limpa temp
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      console.warn('⚠️ Failed to delete temp graph:', err);
+    }
+
+  } catch (err) {
+    console.error('❌ Error in !grafic handler:', err);
+    try {
+      await message.reply('❌ Failed to generate graph.');
+    } catch {}
+  }
+}
+
   // ------------------------------------------------------------
   // !view
   // ------------------------------------------------------------
@@ -1020,53 +1078,178 @@ if (cmd === 'api') {
   // ------------------------------------------------------------
   // !check
   // ------------------------------------------------------------
-  if (cmd === 'check') {
-    const { getTransaction } = require('./database');
-    const path = require('path');
-    const fs = require('fs');
-    const os = require('os');
-    const { AttachmentBuilder } = require('discord.js');
+if (cmd === 'check') {
+  const { getTransaction } = require('./database');
+  const path = require('path');
+  const fs = require('fs');
+  const { AttachmentBuilder } = require('discord.js');
+  const { createCanvas, loadImage } = require('canvas');
+  const QRCode = require('qrcode');
 
-    const txId = args[0];
-    if (!txId) {
-      return message.reply('❌ Use: !check <transaction_ID>');
+  const txId = args[0];
+  if (!txId) {
+    return message.reply('❌ Use: !check <transaction_ID>');
+  }
+
+  const tx = getTransaction(txId);
+  if (!tx) {
+    return message.reply('❌ Unknown transaction.');
+  }
+
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+  const filePath = path.join(tempDir, `${txId}.png`);
+
+  try {
+    // 📐 A4 proporção
+    const width = 1240;
+    const height = 1754;
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    // 🎨 fundo
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    // 🧾 título
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 48px Arial';
+    ctx.fillText('Transaction Receipt', 80, 120);
+
+    // 📅 formatar data
+    const d = new Date(tx.date);
+    const formattedDate = `${String(d.getDate()).padStart(2, '0')} / ${
+      String(d.getMonth() + 1).padStart(2, '0')
+    } / ${d.getFullYear()} at ${
+      String(d.getHours()).padStart(2, '0')
+    }:${String(d.getMinutes()).padStart(2, '0')}:${
+      String(d.getSeconds()).padStart(2, '0')
+    }`;
+
+    ctx.font = '26px Arial';
+    ctx.fillStyle = '#444';
+    ctx.fillText(`Date: ${formattedDate}`, 80, 180);
+
+    // 🪪 TX ID
+    ctx.font = '22px monospace';
+    ctx.fillStyle = '#000';
+    ctx.fillText(`TX ID: ${txId}`, 80, 230);
+
+    // 🔹 linha
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(80, 270);
+    ctx.lineTo(width - 80, 270);
+    ctx.stroke();
+
+    // 👤 nomes Discord
+    let fromName = 'Anonymous';
+    let toName = 'Anonymous';
+
+    try {
+      const fromUser = await message.client.users.fetch(tx.fromId).catch(() => null);
+      const toUser = await message.client.users.fetch(tx.toId).catch(() => null);
+
+      if (fromUser) fromName = fromUser.tag;
+      if (toUser) toName = toUser.tag;
+    } catch {}
+
+    // FROM
+    ctx.font = 'bold 30px Arial';
+    ctx.fillText('From:', 80, 340);
+
+    ctx.font = fromName === 'Anonymous' ? 'italic 26px Arial' : '26px Arial';
+    ctx.fillText(`${fromName} (${tx.fromId})`, 80, 390);
+
+    // TO
+    ctx.font = 'bold 30px Arial';
+    ctx.fillText('To:', 80, 460);
+
+    ctx.font = toName === 'Anonymous' ? 'italic 26px Arial' : '26px Arial';
+    ctx.fillText(`${toName} (${tx.toId})`, 80, 510);
+
+    // 💰 valor
+    ctx.fillStyle = '#16a34a';
+    ctx.font = 'bold 40px Arial';
+    ctx.fillText(`Amount: ${tx.coins} coins`, 80, 620);
+
+    // 🪙 LOGO GRANDE
+    try {
+      const logoPath = path.join(__dirname, 'icon.png');
+      if (fs.existsSync(logoPath)) {
+        const img = await loadImage(logoPath);
+        ctx.drawImage(img, width - 260, 40, 180, 180);
+      }
+    } catch {}
+
+    // 🔳 QR CODE
+    try {
+      const qrSize = 220;
+
+      const qrDataUrl = await QRCode.toDataURL(txId, {
+        errorCorrectionLevel: 'H',
+        margin: 1,
+        width: qrSize
+      });
+
+      const qrImage = await loadImage(qrDataUrl);
+
+      const qrX = (width - qrSize) / 2;
+      const qrY = height - 350;
+
+      ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+
+      ctx.fillStyle = '#555';
+      ctx.font = '22px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Scan to verify transaction', width / 2, qrY + qrSize + 40);
+
+    } catch (err) {
+      console.warn('⚠️ QR failed:', err);
     }
 
-    const tx = getTransaction(txId);
-    if (!tx) {
-      return message.reply('❌ Unknown transaction.');
-    }
-
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-    const filePath = path.join(tempDir, `${txId}.txt`);
-    const content = [
-      `Transaction ID: ${tx.id}`,
-      `Date         : ${tx.date}`,
-      `From         : ${tx.fromId}`,
-      `To           : ${tx.toId}`,
-      `Amount       : ${tx.coins} coins`
-    ].join(os.EOL);
-    fs.writeFileSync(filePath, content, 'utf8');
+    // 🖨️ salvar PNG
+    const buffer = canvas.toBuffer('image/png');
+    fs.writeFileSync(filePath, buffer);
 
     const replyText = `✅ Transaction: (${tx.date}) from \`${tx.fromId}\` to \`${tx.toId}\` of \`${tx.coins}\` coins.`;
 
+    // 📎 enviar
     try {
-      const attachment = new AttachmentBuilder(filePath, { name: `${txId}.txt` });
-      await message.reply({ content: replyText, files: [attachment] });
+      const attachment = new AttachmentBuilder(filePath, {
+        name: `${txId}.png`
+      });
+
+      await message.reply({
+        content: replyText,
+        files: [attachment]
+      });
+
     } catch (err) {
       if (err.code === 50013) {
-        console.warn('⚠️ No permission to send the verification ID:', err);
-        await message.reply(`${replyText}\n❌ No permission to send the ID.`);
+        console.warn('⚠️ No permission:', err);
+        await message.reply(`${replyText}\n❌ No permission to send file.`);
       } else {
-        console.error('Unexpected error while sending confirmation txt:', err);
-        await message.reply(`${replyText}\n❌ ID sending failure.`);
+        console.error('❌ Send error:', err);
+        await message.reply(`${replyText}\n❌ Failed to send receipt.`);
       }
-    } finally {
-      try { fs.unlinkSync(filePath); } catch {}
     }
+
+  } catch (err) {
+    console.error('❌ PNG generation error:', err);
+    return message.reply('❌ Failed to generate receipt.');
+  } finally {
+    // 🧹 cleanup
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch {}
+    }, 5000);
   }
+}
+
 
   // ------------------------------------------------------------
   // !backup
