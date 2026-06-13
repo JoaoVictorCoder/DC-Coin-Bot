@@ -144,7 +144,7 @@ function startGraphUpdater() {
 // ========================
 // 3. MEMORY & TEMP CLEANUP
 // ========================
-const TEMP_DIRS = [path.join(__dirname, 'temp'), path.join(__dirname, 'site', 'temp'), CLOUD_DIR].filter(Boolean);
+const TEMP_DIRS = [path.join(__dirname, 'temp')].filter(Boolean);
 
 async function cleanupTempFolders() {
   let totalCleaned = 0;
