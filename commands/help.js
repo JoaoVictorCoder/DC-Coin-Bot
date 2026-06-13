@@ -18,7 +18,7 @@ module.exports = {
         .addFields(
           { name: '💰 Economy',   value: '/bal, /rank, /pay, /card, /cardreset, /bills, /bill, /paybill' },
           { name: '🎁 Rewards',   value: '/set, /claim, /global' },
-          { name: '💸 Utility',   value: '/view, /remind, /history, /check, /backup, /restore' },
+          { name: '💸 Utility',   value: '/view, /remind, /history, /check, /backup, /restore, /grafic' },
           { name: '📖 API',       value: '/api' },
           { name: '🆘 Help',      value: '/help & /ajuda' },
           { name: 'Extra',       value: 'The commands also works with @Bot mention and the command name: @Coin pay' }
