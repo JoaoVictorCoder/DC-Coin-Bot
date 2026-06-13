@@ -1,964 +1,970 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Coin Bank</title>
-  <link rel="icon" href="favicon.ico" />
-  <style>
-    /* Corpo agora permite scroll completo e mantém conteúdo centralizado horizontalmente */
-    body {
-      margin: 0;
-      font-family: sans-serif;
-      background: #36393f;
-      color: #dcddde;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 20px 0;
-      min-height: 100vh;
-      overflow-y: auto;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
+    <meta property="og:title" content="Coin Bank | Digital Financial System">
+    <meta property="og:description" content="Manage your coins, view graphs, transfer funds and more. Secure and modern.">
+   <meta property="og:image" content="/coin-bank-embed.png">
+    <meta property="og:url" content="https://bank.foxsrv.net">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Coin Bank">
+    <meta name="theme-color" content="#5865F2">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <title>Coin Bank · Financial Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', 'Poppins', system-ui, -apple-system, 'Roboto', sans-serif;
+        }
 
-    /* Modais de login/register CENTRALIZADOS em full height */
-    #loginModal,
-    #registerModal {
-      display: none;
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
-    #loginModal.active,
-    #registerModal.active {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-    }
+        body {
+            background: #36393f;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+        }
 
-    /* Tela principal CENTRALIZADA em viewport mas scrollável no body */
-    #mainScreen {
-      display: none;
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-    }
-    #mainScreen.active {
-      display: flex;
-      align-items: center; /* centraliza vertical */
-      justify-content: center;
-      flex-direction: column;
-      padding: 100px 0; /* espaço acima/abaixo */
-    }
+        .bank-container {
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            background: #2f3136;
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-height: 95vh;
+        }
 
-    .container {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      width: 420px;
-    }
+        /* HEADER */
+        .bank-header {
+            background: #202225;
+            padding: 0.8rem 1.5rem;
+            border-bottom: 1px solid #404249;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            flex-shrink: 0;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .logo-icon {
+            font-size: 1.6rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        .logo-text {
+            font-size: 1.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #FBBF24, #F59E0B);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .user-name-header {
+            font-size: 0.9rem;
+            font-weight: bold;
+            background: #2c2f36;
+            padding: 0.3rem 1rem;
+            border-radius: 40px;
+            color: #FBBF24;
+        }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .avatar-btn {
+            background: #5865F2;
+            width: 34px;
+            height: 34px;
+            border-radius: 60px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: 0.2s;
+        }
+        .avatar-btn:hover { transform: scale(1.02); background: #4752c4; }
 
-    /* make modal cards same width as main container */
-    .modal .card {
-      width: 420px;
-    }
-    .container > .card {
-      width: 100%;
-      box-sizing: border-box;
-    }
+        /* BALANCE CARD */
+        .balance-card {
+            background: #202225;
+            margin: 0.8rem 1.5rem;
+            padding: 0.8rem 1.2rem;
+            border-radius: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            border: 1px solid #404249;
+        }
+        .balance-label {
+            font-size: 0.75rem;
+            color: #b9bbbe;
+            text-transform: uppercase;
+        }
+        .balance-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #43b581;
+            font-family: monospace;
+        }
+        .user-id-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #1e1f24;
+            padding: 0.2rem 0.8rem;
+            border-radius: 40px;
+        }
+        .user-id-row span {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #fff;
+        }
+        .copy-btn-sm {
+            background: #43b581;
+            border: none;
+            padding: 2px 10px;
+            border-radius: 30px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: #fff;
+        }
 
-    .card {
-      background: #2f3136;
-      border-radius: 8px;
-      padding: 20px;
-      position: relative;
-    }
+        /* TABS - MAIORES */
+        .tabs-nav {
+            display: flex;
+            background: #202225;
+            padding: 0.5rem 1rem;
+            gap: 0.5rem;
+            border-bottom: 1px solid #404249;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 0.7rem 1.3rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #b9bbbe;
+            cursor: pointer;
+            transition: 0.2s;
+            border-radius: 2rem;
+            white-space: nowrap;
+        }
+        .tab-btn:hover { color: #fff; background: #2c2f36; }
+        .tab-btn.active { color: #F59E0B; background: #2c2f36; }
 
-    .btn {
-      background: #7289da;
-      border: none;
-      border-radius: 6px;
-      color: #fff;
-      padding: 8px 12px;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.06s;
-      font-weight: 600;
-    }
-    .btn:active { transform: translateY(1px); }
-    .btn.disabled {
-      background: #72767d;
-      cursor: default;
-    }
-    .btn.enabled {
-      background: #43b581;
-    }
-    .btn-reset {
-      background: #ff5c5c;
-      margin-top: 12px;
-    }
+        /* CONTENT */
+        .dynamic-content {
+            padding: 1.2rem;
+            overflow-y: auto;
+            flex: 1;
+            background: #36393f;
+        }
+        .card-modern {
+            background: #2f3136;
+            border-radius: 24px;
+            padding: 1.2rem;
+            border: 1px solid #404249;
+            color: #ffffff;
+            margin-bottom: 1rem;
+        }
 
-    .nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 16px;
-    }
-    .nav .btn {
-      flex: 1;
-    }
+        /* FORMS & INPUTS */
+        .btn {
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+            background: #4e5058;
+            color: #fff;
+        }
+        .btn-primary { background: #5865F2; }
+        .btn-primary:hover { background: #4752c4; transform: translateY(-1px); }
+        .btn-secondary { background: #4e5058; }
+        .btn-secondary:hover { background: #6d6f78; }
+        .btn-danger { background: #ed4245; }
+        .btn-danger:hover { background: #c03537; }
+        .copy-btn {
+            background: #43b581;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 0.65rem;
+            cursor: pointer;
+            color: #fff;
+        }
+        .icon-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 4px 8px;
+            border-radius: 30px;
+            transition: 0.2s;
+        }
+        .icon-btn:hover { background: #404249; }
 
-    #dynamic {
-      background: #2f3136;
-      border-radius: 8px;
-      padding: 20px;
-      height: 500px;
-      overflow-y: auto;
-      margin-top: 8px;
-    }
+        input, textarea, select {
+            width: 100%;
+            background: #1e1f24;
+            border: 1px solid #404249;
+            padding: 0.6rem 1rem;
+            border-radius: 1rem;
+            color: #fff;
+            outline: none;
+            transition: 0.2s;
+            margin-bottom: 0.8rem;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color: #5865F2;
+            box-shadow: 0 0 0 2px rgba(88,101,242,0.3);
+        }
 
-    /* Footer card igual largura dos modais e centralizado */
-    .modal #footerCard {
-      width: 460px;
-      margin: 16px auto 0 auto;
-    }
-    #footerCard {
-      background: #2f3136;
-      border-radius: 8px;
-      padding: 20px;
-      text-align: center;
-      box-sizing: border-box;
-      width: 100%;
-    }
+        /* LISTS */
+        .tx-item, .bill-item {
+            background: #202225;
+            border-radius: 20px;
+            padding: 0.8rem;
+            margin-bottom: 0.7rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .tx-info, .bill-info { font-size: 0.75rem; line-height: 1.4; font-family: monospace; color: #dcddde; }
 
-    .field {
-      margin-bottom: 12px;
-    }
-    .field input {
-      width: 100%;
-      padding: 8px;
-      border-radius: 4px;
-      border: none;
-      box-sizing: border-box;
-    }
+        /* CARD STYLE */
+        .bank-card {
+            background: #1e1e2e;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 360px;
+            margin: 0 auto;
+            height: 190px;
+            position: relative;
+            color: #fff;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+        .bank-card .magstripe {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            height: 30px;
+            background: #000;
+        }
+        .bank-card .info {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            font-size: 12px;
+        }
+        .bank-card .info p { margin: 4px 0; word-break: break-all; }
 
-    .tx,
-    .bill {
-      background: #202225;
-      border-radius: 4px;
-      padding: 12px;
-      margin-bottom: 12px;
-      white-space: pre-line;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-    }
+        /* GRAPH */
+        .graph-container { background: #1e1f24; border-radius: 20px; padding: 0.8rem; margin-bottom: 1rem; }
+        canvas { max-height: 280px; width: 100%; }
+        .graph-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+        .graph-btn {
+            background: #404249;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 40px;
+            color: #fff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .graph-btn.active {
+            background: #5865F2;
+            box-shadow: 0 2px 6px rgba(88,101,242,0.4);
+        }
 
-    .tx .left,
-    .bill .left { flex: 1; }
+        /* MODAL */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top:0;left:0;width:100%;height:100%;
+            background: rgba(0,0,0,0.9);
+            backdrop-filter: blur(8px);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-card {
+            background: #2f3136;
+            border-radius: 1.5rem;
+            max-width: 460px;
+            width: 90%;
+            border: 1px solid #404249;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #404249;
+            font-weight: 700;
+            color: #FBBF24;
+            display: flex;
+            justify-content: space-between;
+            background: #202225;
+        }
+        .modal-body { padding: 1.5rem; }
+        .modal-body .btn { margin-top: 0.5rem; width: 100%; }
 
-    .highlight {
-      color: #8f8f8f;
-    }
+        /* BACKUP ITEMS */
+        .backup-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e1f24;
+            border-radius: 60px;
+            padding: 6px 12px;
+            margin-bottom: 8px;
+        }
+        .backup-code {
+            font-family: monospace;
+            font-size: 0.7rem;
+            word-break: break-all;
+        }
 
-    #cardDisplay {
-      display: flex;
-      justify-content: center;
-    }
-    .bank-card {
-      background: #1e1e1e;
-      border-radius: 12px;
-      width: 300px;
-      height: 180px;
-      position: relative;
-      color: #fff;
-    }
-    .bank-card .magstripe {
-      position: absolute;
-      top: 20px;
-      left: 0;
-      width: 100%;
-      height: 32px;
-      background: #000;
-    }
-    .bank-card .info {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      font-size: 14px;
-      line-height: 1.2;
-    }
+        .tx-check-result {
+            background: #202225;
+            border-radius: 20px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
 
-    .balance-box {
-      background: #23272a;
-      padding: 8px;
-      border-radius: 4px;
-      text-align: right;
-      margin: 12px 0;
-      font-size: 20px;
-    }
+        /* TOAST */
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c2f36;
+            backdrop-filter: blur(12px);
+            color: #FBBF24;
+            padding: 10px 22px;
+            border-radius: 60px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            z-index: 2100;
+            display: none;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-left: 4px solid #43b581;
+        }
+        .toast.error { border-left-color: #ed4245; color: #ed4245; }
 
-    #userBtn,
-    #settingsBtn {
-      position: absolute;
-      top: 16px;
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-      font-size: 18px;
-      line-height: 32px;
-      text-align: center;
-      cursor: pointer;
-    }
-    #userBtn {
-      right: 16px;
-      background: #43b581;
-    }
-    #settingsBtn {
-      right: 56px;
-      background: #7289da;
-    }
-    /* new tx button */
-    #txBtn {
-      position: absolute;
-      top: 16px;
-      right: 96px;
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-      font-size: 16px;
-      line-height: 32px;
-      text-align: center;
-      cursor: pointer;
-      background: #cfcfcf;
-      color: #111;
-      box-shadow: inset 0 -2px 0 rgba(0,0,0,0.08);
-    }
+        footer {
+            text-align: center;
+            padding: 0.6rem;
+            font-size: 0.65rem;
+            color: #72767d;
+            border-top: 1px solid #404249;
+            background: #2f3136;
+        }
+        footer a { color: #FBBF24; text-decoration: none; }
 
-    .single-tx-placeholder {
-      background: #000;         /* black as requested */
-      color: #fff;
-      border-radius: 4px;
-      padding: 12px;
-      min-height: 80px;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      font-family: monospace;
-      white-space: pre-wrap;
-      position: relative; /* allows inner copy button to position */
-    }
-
-    /* COPY BUTTON style: softer green, rounded, more modelled */
-    .copy-btn {
-      background: linear-gradient(180deg,#9fe6c8,#66d398);
-      color: #ffffff;
-      border: none;
-      padding: 8px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      font-weight: 700;
-      box-shadow: 0 6px 14px rgba(17,100,61,0.16), inset 0 -2px 0 rgba(255,255,255,0.08);
-      transition: transform 0.06s, opacity 0.12s;
-    }
-    .copy-btn:active { transform: translateY(1px); }
-    .copy-btn.small { padding:6px 8px; border-radius:8px; font-weight:600; font-size:13px; }
-
-    /* RED variant for reset (same shape but red soft gradient) */
-    .copy-btn.red {
-      background: linear-gradient(180deg,#ffb3b3,#ff6b6b);
-      color: #3b0505;
-      box-shadow: 0 6px 14px rgba(110,16,16,0.12), inset 0 -2px 0 rgba(255,255,255,0.06);
-    }
-
-    .copy-inline {
-      display:flex;
-      gap:8px;
-      align-items:center;
-    }
-
-    /* small responsive tweak */
-    @media (max-width: 480px) {
-      .container { width: 92%; }
-      .bank-card { width: 100%; }
-    }
-  </style>
+        @media (max-width: 700px) {
+            body { padding: 0.5rem; }
+            .bank-container { max-height: 98vh; }
+            .bank-header { flex-direction: column; align-items: stretch; }
+            .balance-card { flex-direction: column; align-items: stretch; margin: 0.8rem 1rem; }
+            .tabs-nav { padding: 0.5rem; gap: 0.3rem; }
+            .tab-btn { padding: 0.5rem 0.9rem; font-size: 0.75rem; }
+            .dynamic-content { padding: 0.8rem; }
+        }
+        @media (max-width: 480px) {
+            .toast { white-space: normal; text-align: center; width: 90%; font-size: 0.7rem; }
+        }
+    </style>
 </head>
 <body>
-  <!-- Login Modal -->
-  <div id="loginModal" class="modal active">
-    <div class="card">
-      <h2>Login</h2>
-      <div class="field"><input id="loginUser" placeholder="Username" /></div>
-      <div class="field">
-        <input id="loginPass" type="password" placeholder="Password" />
-      </div>
-      <button id="loginBtn" class="btn">Login</button>
-      <button id="goRegisterBtn" class="btn">Register</button>
-    </div>
-    <div id="footerCard" class="card">
-        <div>
-          <a
-            href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
-            style="color: #7289da; text-decoration: none; font-weight: bold;";
-            >Install Discord Bot</a
-          >
+<div class="bank-container">
+    <div class="bank-header">
+        <div class="logo">
+            <span class="logo-icon">💰</span>
+            <span class="logo-text">Coin Bank</span>
         </div>
-        <div>
-          <a href="/terms" style="color: #7289da; text-decoration: none">Terms Of Use</a>
-          &amp;
-          <a href="/terms/documentation.html" style="color: #7289da; text-decoration: none">API Docs</a>
-          &amp;
-          <a href="/terms/privacy.html" style="color: #7289da; text-decoration: none">Privacy Policy</a>
-        <div>Coin System © since 2025</div>
+        <div class="header-actions">
+            <div class="user-name-header" id="headerUsername">Loading...</div>
+            <div class="avatar-btn" id="openSettingsModalBtn">⚙️</div>
         </div>
     </div>
-  </div>
 
-  <!-- Register Modal -->
-  <div id="registerModal" class="modal">
-    <div class="card">
-      <h2>Register</h2>
-      <div class="field"><input id="regUser" placeholder="Username" /></div>
-      <div class="field">
-        <input id="regPass" type="password" placeholder="Password" />
-      </div>
-      <div class="field">
-        <input id="regConfirm" type="password" placeholder="Confirm Password" />
-      </div>
-      <button id="registerBtn" class="btn">Register</button>
-      <button id="backBtn" class="btn">Back</button>
-    </div>
-    <div id="footerCard" class="card">
-        <div>
-          <a
-            href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
-            style="color: #7289da; text-decoration: none; font-weight: bold;";
-            >Install Discord Bot</a
-          >
-        </div>
-        <div>
-          <a href="/terms" style="color: #7289da; text-decoration: none">Terms Of Use</a>
-          &amp;
-          <a href="/terms/documentation.html" style="color: #7289da; text-decoration: none">API Docs</a>
-          &amp;
-          <a href="/terms/privacy.html" style="color: #7289da; text-decoration: none">Privacy Policy</a>
-        <div>Coin System © since 2025</div>
+    <!-- SALDO CARD SEPARADO -->
+    <div class="balance-card">
+        <div class="balance-label">💰 Current Balance</div>
+        <div class="balance-value" id="headerBalance">0.00000000 coins</div>
+        <div class="user-id-row">
+            <span id="headerUserId">---</span>
+            <button class="copy-btn-sm" id="copyUserIdHeaderBtn">Copy ID</button>
         </div>
     </div>
-  </div>
 
-  <!-- Main Screen -->
-  <div id="mainScreen" class="screen">
-    <div class="container">
-      <div class="card">
-        <strong id="dispUser" style="font-size: 18px"></strong>
-        <div class="field" style="display:flex;align-items:center;gap:8px">
-          <span id="dispUserId"></span>
-          <!-- user copy button -->
-          <button id="copyUserIdBtn" class="copy-btn small" title="Copy user id">Copy</button>
-        </div>
-        <div class="balance-box">
-          <span id="dispBalance" class="highlight">0.00000000</span> coins
-        </div>
-        <div id="settingsBtn">⚙️</div>
-        <div id="txBtn">💳</div>
-        <div id="userBtn">👤</div>
-        <div class="nav">
-          <button class="btn" data-screen="history">Home</button>
-          <button class="btn" data-screen="card">Card</button>
-          <button class="btn" data-screen="bills">Bills</button>
-          <button class="btn" data-screen="transfer">Pay</button>
-          <button class="btn" data-screen="claim">Claim</button>
-        </div>
-      </div>
-      <div id="dynamic" class="card"></div>
-      <div id="footerCard" class="card">
-        <div>
-          <a
-            href="https://discord.com/oauth2/authorize?client_id=1391067775077978214"
-            style="color: #7289da; text-decoration: none; font-weight: bold;";
-            >Install Discord Bot</a
-          >
-        </div>
-        <div>
-          <a href="/terms" style="color: #7289da; text-decoration: none">Terms Of Use</a>
-          &amp;
-          <a href="/terms/documentation.html" style="color: #7289da; text-decoration: none">API Docs</a>
-          &amp;
-          <a href="/terms/privacy.html" style="color: #7289da; text-decoration: none">Privacy Policy</a>
-        <div>Coin System © since 2025</div>
-        </div>
-      </div>
+    <div class="tabs-nav" id="tabsContainer">
+        <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+        <button class="tab-btn" data-tab="transactions">📜 Transactions</button>
+        <button class="tab-btn" data-tab="card">💳 Card</button>
+        <button class="tab-btn" data-tab="bills">📄 Bills</button>
+        <button class="tab-btn" data-tab="transfer">🔄 Transfer</button>
+        <button class="tab-btn" data-tab="check">🔍 Check</button>
+        <button class="tab-btn" data-tab="claim">🎁 Claim</button>
     </div>
-  </div>
 
-  <script>
-    (function () {
-      const API = location.origin;
-      let session = null,
-        remaining = 0,
-        lastTimestamp = null;
+    <div class="dynamic-content" id="dynamicContent">
+        <div class="card-modern" style="text-align:center;">Loading dashboard...</div>
+    </div>
 
-      /* --- utility: copy silently (no alerts) --- */
-      async function copySilent(text) {
-        if (!text && text !== 0) return;
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(String(text));
-            return true;
-          }
-        } catch (e) {
-          // fallback below
-        }
-        // fallback: textarea selection
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = String(text);
-          ta.style.position = "fixed";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          const ok = document.execCommand && document.execCommand("copy");
-          document.body.removeChild(ta);
-          return !!ok;
-        } catch (e) {
-          return false;
-        }
-      }
+    <footer>
+        <a href="/terms" target="_blank">📜 Terms of Use</a> &nbsp;|&nbsp;
+        <a href="/terms/privacy.html" target="_blank">🔒 Privacy</a> &nbsp;|&nbsp;
+        <a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" target="_blank">🤖 Discord Bot</a> &nbsp;|&nbsp;
+        <span>© Coin System 2025</span>
+    </footer>
+</div>
 
-      function authHeaders() {
+<!-- SETTINGS MODAL -->
+<div id="settingsModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header"><span>⚙️ Account & Backup</span><button style="background:none; border:none; color:#FBBF24; font-size:1.5rem; cursor:pointer;" onclick="closeSettingsModal()">✕</button></div>
+        <div class="modal-body">
+            <h4>🔐 Change Credentials</h4>
+            <input type="text" id="newUsername" placeholder="New username (optional)">
+            <input type="password" id="newPassword" placeholder="New password">
+            <input type="password" id="confirmNewPassword" placeholder="Confirm password">
+            <button class="btn btn-primary" id="doChangeCredsBtn" style="margin-bottom:16px;">Change</button>
+            <hr style="margin:12px 0; border-color:#404249;">
+            <h4>💾 Backup Codes</h4>
+            <div id="backupListContainer" style="max-height:160px; overflow-y:auto; margin-bottom:12px;"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="text" id="restoreBackupCode" placeholder="Code to restore" style="flex:1;">
+                <button class="btn btn-secondary" id="doRestoreBackupBtn">Restore</button>
+                <button class="btn btn-primary" id="doCreateBackupBtn">Create</button>
+            </div>
+            <hr style="margin:16px 0;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-danger" id="doUnregisterBtn">🗑️ Delete Account</button>
+                <button class="btn btn-secondary" id="doLogoutBtn">🚪 Logout</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- LOGIN / REGISTER MODAL -->
+<div id="loginRegisterOverlay" style="display:flex; position:fixed; inset:0; background:#36393f; z-index:2000; justify-content:center; align-items:center;">
+    <div class="modal-card" style="max-width:420px;">
+        <div class="modal-header"><span id="authModalTitle">🔐 Access Account</span></div>
+        <div class="modal-body">
+            <div id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Username" style="margin-bottom:1rem;">
+                <input type="password" id="loginPassword" placeholder="Password" style="margin-bottom:1.2rem;">
+                <button class="btn btn-primary" id="loginSubmitBtn">Login</button>
+                <button class="btn btn-secondary" id="switchToRegisterBtn" style="margin-top:12px;">Create Account</button>
+            </div>
+            <div id="registerForm" style="display:none;">
+                <input type="text" id="regUsername" placeholder="Username" style="margin-bottom:1rem;">
+                <input type="password" id="regPassword" placeholder="Password" style="margin-bottom:1rem;">
+                <input type="password" id="regConfirm" placeholder="Confirm password" style="margin-bottom:1.2rem;">
+                <button class="btn btn-primary" id="registerSubmitBtn">Register</button>
+                <button class="btn btn-secondary" id="switchToLoginBtn" style="margin-top:12px;">Back to Login</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toastMsg" class="toast"></div>
+
+<script>
+    const API = window.location.origin;
+    let session = null;
+    let chartInstance = null;
+    let currentGraphRange = '24h';
+    let allTransactionsCache = [];
+
+    function showToast(msg, isError=false) {
+        const toast = document.getElementById('toastMsg');
+        toast.innerText = msg;
+        toast.style.display = 'block';
+        toast.className = `toast ${isError ? 'error' : ''}`;
+        setTimeout(() => toast.style.display = 'none', 3500);
+    }
+    async function copyText(text) {
+        try { await navigator.clipboard.writeText(String(text)); showToast('✅ Copied!'); } catch(e) { showToast('Failed to copy', true); }
+    }
+    function authHeaders() {
         return { Authorization: "Bearer " + session.sessionId, "Content-Type": "application/json" };
-      }
-      function show(screen) {
-        document.getElementById("loginModal").classList.toggle("active", screen === "login");
-        document.getElementById("registerModal").classList.toggle("active", screen === "register");
-        document.getElementById("mainScreen").classList.toggle("active", screen === "main");
-        // remove any leftover tx copy button if switching screens
-        const old = document.getElementById("txResultCopyBtn");
-        if (old && old.parentNode) old.remove();
-      }
-
-      /* AUTH */
-      async function login() {
-        const u = document.getElementById("loginUser").value.trim();
-        const p = document.getElementById("loginPass").value;
+    }
+    async function refreshBalanceUI() {
+        if(!session) return;
         try {
-          const r = await fetch(API + "/api/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: u, password: p }),
-          });
-          if (!r.ok) throw "";
-          const j = await r.json();
-          if (j.sessionCreated && j.passwordCorrect) {
-            session = { username: u, sessionId: j.sessionId, userId: j.userId };
-            localStorage.setItem("session", JSON.stringify(session));
-            init();
-          } else {
-            alert("Invalid credentials");
-          }
-        } catch {
-          alert("Login error");
-        }
-      }
-      async function doRegister() {
-        const u = document.getElementById("regUser").value.trim();
-        const p = document.getElementById("regPass").value;
-        const cp = document.getElementById("regConfirm").value;
-        if (!u || !p || !cp) return alert("Please fill all fields.");
-        if (p !== cp) return alert("Passwords must match.");
-        try {
-          const r = await fetch(API + "/api/register", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: u, password: p }),
-          });
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.error || "Register failed");
-          alert("Account created! Please login.");
-          show("login");
-        } catch (e) {
-          alert(e.message);
-        }
-      }
-
-      /* --- load balance --- */
-      async function loadBalance() {
-        try {
-          const r = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
-          if (r.ok) {
-            const { coins = 0 } = await r.json();
-            document.getElementById("dispBalance").textContent = Number(coins).toFixed(8);
-          }
-        } catch {}
-      }
-
-      /* --- main module loader --- */
-      async function loadModule(mod) {
-        // remove any leftover tx copy button before re-rendering dynamic
-        const old = document.getElementById("txResultCopyBtn");
-        if (old && old.parentNode) old.remove();
-
-        const c = document.getElementById("dynamic");
-        c.innerHTML = "";
-        if (mod === "settings") {
-          c.innerHTML =
-            `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">` +
-            `<button class="btn-reset" onclick="doUnregister()">Unregister</button>` +
-            `<button class="btn-reset" onclick="doLogout()">Logout</button>` +
-            `</div>` +
-            `<div class="field"><input id="newUser" placeholder="Username (optional)"></div>` +
-            `<div class="field"><input id="newPass" type="password" placeholder="New Password"></div>` +
-            `<div class="field"><input id="confirmPass" type="password" placeholder="Confirm Password"></div>` +
-            `<button class="btn-reset" style="background:#ff5c5c;width:100%;" onclick="doChange()">Change</button>`;
-          return;
-        }
-        if (mod === "backup") {
-          c.innerHTML =
-            `<div class="field"><input id="backupId" placeholder="Your backup ID"></div>` +
-            `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">` +
-            `<button class="btn" id="doRestoreBtn">Restore</button>` +
-            `<button class="btn" id="doCreateBackupBtn">Create Backup</button>` +
-            `</div>` +
-            `<hr style="margin:16px 0;border-color:#444"><h3>Your Backups</h3>`;
-          try {
-            const res = await fetch(API + "/api/backup/list", { method: "POST", headers: authHeaders() });
-            if (res.ok) {
-              const { backups } = await res.json();
-              // create container for backups
-              const listContainer = document.createElement("div");
-              backups.forEach((code) => {
-                const row = document.createElement("div");
-                row.className = "bill";
-                row.style.display = "flex";
-                row.style.justifyContent = "space-between";
-                row.style.alignItems = "center";
-                row.style.gap = "12px";
-                const text = document.createElement("div");
-                text.textContent = code;
-                const btns = document.createElement("div");
-                btns.style.display = "flex";
-                btns.style.gap = "8px";
-                const copyBtn = document.createElement("button");
-                copyBtn.className = "copy-btn small";
-                copyBtn.textContent = "Copy";
-                copyBtn.onclick = () => copySilent(code);
-                btns.appendChild(copyBtn);
-                row.appendChild(text);
-                row.appendChild(btns);
-                listContainer.appendChild(row);
-              });
-              c.appendChild(listContainer);
+            const res = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
+            if(res.ok) {
+                const { coins } = await res.json();
+                document.getElementById("headerBalance").innerText = parseFloat(coins).toFixed(8) + " coins";
             }
-          } catch {}
-          // attach handlers for restore/create (they exist as global functions)
-          setTimeout(() => {
-            const rb = document.getElementById("doRestoreBtn");
-            if (rb) rb.onclick = () => doRestore();
-            const cb = document.getElementById("doCreateBackupBtn");
-            if (cb) cb.onclick = () => doCreateBackup();
-          }, 20);
-          return;
+        } catch(e) {}
+    }
+    async function fetchAllTransactions() {
+        let page = 1, all = [];
+        while(true) {
+            const res = await fetch(`${API}/api/transactions?page=${page}`, { headers: authHeaders() });
+            if(!res.ok) break;
+            const data = await res.json();
+            const txs = data.transactions || [];
+            if(txs.length === 0) break;
+            all.push(...txs);
+            page++;
         }
-        if (mod === "transfer") {
-          c.innerHTML =
-            `<div class="field"><input id="amt" placeholder="Amount"></div>` +
-            `<div class="field"><input id="toId" placeholder="Recipient ID"></div>` +
-            `<button class="btn" onclick="doTransfer()">Pay User</button><hr style="margin:16px 0;border-color:#444">` +
-            `<div class="field"><input id="billId" placeholder="Bill ID"></div>` +
-            `<button class="btn" onclick="doPayBill()">Pay Bill</button>`;
-          return;
-        }
-        if (mod === "history") {
-          const r = await fetch(API + "/api/transactions?page=1", { headers: authHeaders() });
-          if (!r.ok) return;
-          const { transactions } = await r.json();
-          transactions.forEach((t) => {
-            const d = document.createElement("div");
-            d.className = "tx";
-            const left = document.createElement("div");
-            left.className = "left";
-            left.textContent =
-              `date: ${new Date(t.date).toLocaleString("en-GB")}\n\n` +
-              `from: ${t.from_id}\n\n` +
-              `to: ${t.to_id}\n` +
-              `amount: ${parseFloat(t.amount).toFixed(8)} coins\n\n` +
-              `${t.id}`;
-            const right = document.createElement("div");
-            right.style.display = "flex";
-            right.style.flexDirection = "column";
-            right.style.gap = "8px";
-            right.style.alignItems = "flex-end";
-            // button to copy transaction id
-            const copyBtn = document.createElement("button");
-            copyBtn.className = "copy-btn small";
-            copyBtn.textContent = "Copy ID";
-            copyBtn.onclick = () => copySilent(t.id);
-            right.appendChild(copyBtn);
-            d.appendChild(left);
-            d.appendChild(right);
-            c.append(d);
-          });
-          return;
-        }
-        if (mod === "bills") {
-          const r = await fetch(API + "/api/bill/list", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ page: 1 }),
-          });
-          if (!r.ok) return;
-          const { toPay = [], toReceive = [] } = await r.json();
-          const all = [...toPay, ...toReceive];
-          if (!all.length) {
-            c.innerHTML = `<div class="small">No bills found</div>`;
-            return;
-          }
-          all.forEach((b) => {
-            const div = document.createElement("div");
-            div.className = "bill";
-            const left = document.createElement("div");
-            left.className = "left";
-            left.innerHTML =
-              `date: ${new Date(b.date).toLocaleString("en-GB")}<br>` +
-              `from: ${b.from_id}<br>` +
-              `to: ${b.to_id}<br>` +
-              `amount: ${parseFloat(b.amount).toFixed(8)} coins<br><br>` +
-              `${b.id}`;
-            const right = document.createElement("div");
-            right.style.display = "flex";
-            right.style.flexDirection = "column";
-            right.style.gap = "8px";
-            right.style.alignItems = "flex-end";
-            // copy bill id button
-            const copyBtn = document.createElement("button");
-            copyBtn.className = "copy-btn small";
-            copyBtn.textContent = "Copy ID";
-            copyBtn.onclick = () => copySilent(b.id);
-            // pay button (existing behavior)
-            const payBtn = document.createElement("button");
-            payBtn.className = "btn";
-            payBtn.textContent = "Pay";
-            payBtn.onclick = () => payBillItem(b.id);
-            right.appendChild(copyBtn);
-            right.appendChild(payBtn);
-            div.appendChild(left);
-            div.appendChild(right);
-            c.append(div);
-          });
-          return;
-        }
-        if (mod === "card") {
-          const r = await fetch(API + "/api/card", { method: "POST", headers: authHeaders() });
-          if (!r.ok) {
-            c.innerHTML = `<div class="small">Error loading card</div>`;
-            return;
-          }
-          const { cardCode } = await r.json();
-          c.innerHTML =
-            `<div id="cardDisplay"><div class="bank-card"><div class="magstripe"></div>` +
-            `<div class="info"><p>${escapeHtml(session.userId)}</p><p>${escapeHtml(cardCode)}</p></div></div></div>` +
-            // copy + reset inline: copy left, reset right
-            `<div style="display:flex;gap:8px;margin-top:12px">` +
-            `<div class="copy-inline">` +
-            `<button id="copyCardUnderBtn" class="copy-btn small">Copy Card</button>` +
-            `<button id="resetCardUnderBtn" class="copy-btn small red">Reset</button>` +
-            `</div>` +
-            `</div>` +
-            `<hr style="margin:16px 0;border-color:#444">` +
-            `<div class="field"><input id="billAmount" placeholder="Amount"></div>` +
-            `<div class="field"><input id="billFrom" placeholder="From (User ID)"></div>` +
-            `<button class="btn" onclick="doCreateBill()">Create Bill</button>`;
-          // attach copy and reset handlers after injecting
-          setTimeout(() => {
-            const copyBtn = document.getElementById("copyCardUnderBtn");
-            if (copyBtn) copyBtn.onclick = () => copySilent(cardCode);
-            const resetBtn = document.getElementById("resetCardUnderBtn");
-            if (resetBtn) resetBtn.onclick = () => resetCard();
-          }, 20);
-          return;
-        }
-        if (mod === "claim") {
-          c.innerHTML =
-            `<div style="display:flex;flex-direction:column;align-items:center;">` +
-            `<h3 style="margin-bottom:16px;">Claim Coins</h3>` +
-            `<button id="claimActionBtn" class="btn disabled" disabled>Claim</button>` +
-            `<div style="height:1em;"></div>` +
-            `<div id="claimTimer">00h 00m 00s</div>` +
-            `<div id="lastClaimDate" style="margin-top:16px;font-size:12px;color:#aaa;">Last claim: —</div>` +
-            `</div>`;
-          setupClaim(c);
-          return;
-        }
-        if (mod === "txcheck") {
-          // tx check UI: input + send + placeholder of 1 transaction (black)
-          c.innerHTML =
-            `<div style="display:flex;flex-direction:column;align-items:stretch;">` +
-            `<h3 style="margin-bottom:12px;">Check Transaction</h3>` +
-            `<div class="field"><input id="txIdInput" placeholder="Transaction ID"></div>` +
-            `<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">` +
-            `<button class="btn" id="txCheckBtn">Check</button>` +
-            `</div>` +
-            `<div id="txResultWrapper">` +
-            `<div id="txResult" class="single-tx-placeholder"><div id="txResultText" style="flex:1">—</div></div>` +
-            `</div>` +
-            `</div>`;
-
-          document.getElementById("txCheckBtn").onclick = async function () {
-            const txId = document.getElementById("txIdInput").value.trim();
-            const box = document.getElementById("txResult");
-            const textDiv = document.getElementById("txResultText");
-            // remove previous internal copy button if any
-            const prevBtn = document.getElementById("txResultCopyBtn");
-            if (prevBtn && prevBtn.parentNode) prevBtn.remove();
-
-            if (!txId) {
-              textDiv.textContent = "Put a transaction ID";
-              return;
+        return all;
+    }
+    async function getGraphData(range) {
+        if(!session) return null;
+        try {
+            const balanceRes = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
+            const { coins: currentCoins } = await balanceRes.json();
+            let currentBalance = parseFloat(currentCoins);
+            let transactions = allTransactionsCache.length ? allTransactionsCache : await fetchAllTransactions();
+            allTransactionsCache = transactions;
+            if(transactions.length === 0) return { labels: [new Date().toLocaleTimeString()], values: [currentBalance] };
+            transactions.sort((a,b) => new Date(a.date) - new Date(b.date));
+            let net = 0;
+            for(const tx of transactions) {
+                if(tx.from_id === session.userId) net -= parseFloat(tx.amount);
+                if(tx.to_id === session.userId) net += parseFloat(tx.amount);
             }
-            textDiv.textContent = "Loading...";
+            let historical = currentBalance - net;
+            let dailyMap = new Map();
+            let cur = historical;
+            for(const tx of transactions) {
+                const amt = parseFloat(tx.amount);
+                if(tx.from_id === session.userId) cur -= amt;
+                if(tx.to_id === session.userId) cur += amt;
+                const d = new Date(tx.date).toISOString().slice(0,10);
+                dailyMap.set(d, cur);
+            }
+            const today = new Date().toISOString().slice(0,10);
+            dailyMap.set(today, currentBalance);
+            const now = new Date();
+            const labels = [], values = [];
+            if(range === '24h') {
+                for(let i=23; i>=0; i--) {
+                    const h = new Date(now);
+                    h.setHours(now.getHours() - i, 0,0,0);
+                    labels.push(h.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+                    let foundVal = currentBalance;
+                    for(let j=transactions.length-1; j>=0; j--) {
+                        const txDate = new Date(transactions[j].date);
+                        if(txDate <= h) { 
+                            let bal = currentBalance;
+                            for(let k=j; k<transactions.length; k++) {
+                                if(transactions[k].from_id === session.userId) bal -= parseFloat(transactions[k].amount);
+                                if(transactions[k].to_id === session.userId) bal += parseFloat(transactions[k].amount);
+                            }
+                            foundVal = bal; break;
+                        }
+                    }
+                    values.unshift(foundVal);
+                }
+                return { labels, values };
+            } else {
+                let days = range === '7d' ? 7 : (range === '15d' ? 15 : 30);
+                for(let i=days-1; i>=0; i--) {
+                    const d = new Date(now);
+                    d.setDate(now.getDate() - i);
+                    const key = d.toISOString().slice(0,10);
+                    labels.push(key.slice(5));
+                    let val = dailyMap.get(key);
+                    if(val === undefined) {
+                        let found = null;
+                        for(let j=i-1; j>=0; j--) {
+                            const prevD = new Date(now);
+                            prevD.setDate(now.getDate() - j);
+                            const prevKey = prevD.toISOString().slice(0,10);
+                            if(dailyMap.has(prevKey)) { found = dailyMap.get(prevKey); break; }
+                        }
+                        val = found !== null ? found : (values.length ? values[values.length-1] : currentBalance);
+                    }
+                    values.push(val);
+                }
+                return { labels, values };
+            }
+        } catch(e) { console.error(e); return null; }
+    }
+    async function renderDashboard() {
+        const container = document.getElementById('dynamicContent');
+        container.innerHTML = `<div class="card-modern"><div class="graph-container"><canvas id="balanceChart" width="800" height="280"></canvas></div>
+            <div class="graph-buttons">
+                <button class="graph-btn ${currentGraphRange === '24h' ? 'active' : ''}" data-range="24h">24h</button>
+                <button class="graph-btn ${currentGraphRange === '7d' ? 'active' : ''}" data-range="7d">7d</button>
+                <button class="graph-btn ${currentGraphRange === '15d' ? 'active' : ''}" data-range="15d">15d</button>
+                <button class="graph-btn ${currentGraphRange === '30d' ? 'active' : ''}" data-range="30d">30d</button>
+            </div></div>`;
+        const data = await getGraphData(currentGraphRange);
+        if(data && data.labels.length) {
+            const ctx = document.getElementById('balanceChart').getContext('2d');
+            if(chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels: data.labels, datasets: [{ label: 'Balance (coins)', data: data.values, borderColor: '#5865F2', backgroundColor: 'rgba(88,101,242,0.2)', fill: true, tension: 0.3, pointRadius: 2 }] },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { labels: { color: '#fff' } }, tooltip: { callbacks: { label: (ctx) => `💰 ${ctx.raw.toFixed(8)} coins` } } },
+                scales: { y: { ticks: { color: '#b9bbbe', callback: (v) => v.toFixed(4) }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                           x: { ticks: { color: '#b9bbbe', maxRotation: 45, autoSkip: true }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
+            });
+        }
+        document.querySelectorAll('.graph-btn').forEach(btn => {
+            btn.onclick = async () => {
+                currentGraphRange = btn.dataset.range;
+                await renderDashboard();
+                document.querySelectorAll('.graph-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            };
+        });
+    }
+    async function loadTransactions() {
+        const container = document.getElementById('dynamicContent');
+        container.innerHTML = `<div class="card-modern">📜 Loading transactions...</div>`;
+        const res = await fetch(`${API}/api/transactions?page=1`, { headers: authHeaders() });
+        if(!res.ok) { container.innerHTML = `<div class="card-modern">Error</div>`; return; }
+        const { transactions } = await res.json();
+        if(!transactions.length) { container.innerHTML = `<div class="card-modern">No transactions.</div>`; return; }
+        let html = `<div class="card-modern"><h3>📋 Latest transactions</h3>`;
+        for(const t of transactions) {
+            html += `<div class="tx-item">
+                        <div class="tx-info">📅 ${new Date(t.date).toLocaleString()}<br>🧾 From: ${t.from_id}<br>➡️ To: ${t.to_id}<br>💰 ${parseFloat(t.amount).toFixed(8)} coins<br>🆔 ${t.id}</div>
+                        <div style="display:flex; gap:6px;">
+                            <button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
+                            <button class="icon-btn" title="Download Receipt" onclick="downloadReceipt('${t.id}')">⬇️</button>
+                        </div>
+                    </div>`;
+        }
+        html += `</div>`;
+        container.innerHTML = html;
+    }
+    // Função para gerar PNG do comprovante (igual ao check.js)
+    async function downloadReceipt(txId) {
+        showToast("Generating receipt...");
+        try {
+            const res = await fetch(`${API}/api/tx/${txId}`, { headers: authHeaders() });
+            if(!res.ok) throw new Error("Transaction not found");
+            const data = await res.json();
+            if(!data.success) throw new Error("Invalid transaction");
+            const tx = data.tx;
+            // Criar canvas e desenhar
+            const width = 1240, height = 1754;
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 48px Arial';
+            ctx.fillText('Transaction Receipt', 80, 120);
+            const dateObj = new Date(tx.date);
+            const formattedDate = `${String(dateObj.getDate()).padStart(2,'0')} / ${String(dateObj.getMonth()+1).padStart(2,'0')} / ${dateObj.getFullYear()} at ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}:${String(dateObj.getSeconds()).padStart(2,'0')}`;
+            ctx.font = '26px Arial';
+            ctx.fillStyle = '#444';
+            ctx.fillText(`Date: ${formattedDate}`, 80, 180);
+            ctx.font = '22px monospace';
+            ctx.fillStyle = '#000';
+            ctx.fillText(`TX ID: ${txId}`, 80, 230);
+            ctx.strokeStyle = '#ddd';
+            ctx.beginPath(); ctx.moveTo(80, 270); ctx.lineTo(width-80, 270); ctx.stroke();
+            ctx.font = 'bold 30px Arial';
+            ctx.fillText('From:', 80, 340);
+            ctx.font = '26px Arial';
+            ctx.fillText(`${tx.from} (${tx.from})`, 80, 390);
+            ctx.font = 'bold 30px Arial';
+            ctx.fillText('To:', 80, 460);
+            ctx.font = '26px Arial';
+            ctx.fillText(`${tx.to} (${tx.to})`, 80, 510);
+            ctx.fillStyle = '#16a34a';
+            ctx.font = 'bold 40px Arial';
+            ctx.fillText(`Amount: ${tx.amountCoins} coins`, 80, 620);
+            // Logo / icon (favicon.ico tentativa)
             try {
-              const res = await fetch(API + "/api/tx/" + encodeURIComponent(txId), {
-                method: "GET",
-                headers: authHeaders()
-              });
-              if (!res.ok) {
-                textDiv.textContent = "invalid transaction";
-                return;
-              }
-              const j = await res.json();
-              const t = j.tx;
-              const txt =
-                `date: ${new Date(t.date).toLocaleString("en-GB")}\n\n` +
-                `from: ${t.from}\n\n` +
-                `to: ${t.to}\n\n` +
-                `amount: ${parseFloat(t.amountCoins).toFixed(8)} coins\n\n` +
-                `${t.id}`;
-              textDiv.textContent = txt;
-              // create a copy button inside the box (top-right)
-              const copyBtn = document.createElement("button");
-              copyBtn.id = "txResultCopyBtn";
-              copyBtn.className = "copy-btn small";
-              copyBtn.style.position = "absolute";
-              copyBtn.style.top = "8px";
-              copyBtn.style.right = "8px";
-              copyBtn.textContent = "Copy ID";
-              copyBtn.onclick = () => copySilent(t.id);
-              box.appendChild(copyBtn);
-            } catch (err) {
-              console.error("❌ Error fetching tx:", err);
-              textDiv.textContent = "invalid transaction";
-            }
-          };
-          return;
-        }
-      }
-
-      function setupClaim(container) {
-        fetch(API + "/api/claim/status", { headers: authHeaders() })
-          .then((r) => r.json())
-          .then((j) => {
-            remaining = j.cooldownRemainingMs;
-            lastTimestamp = j.lastClaimTimestamp;
-            const dateEl = container.querySelector("#lastClaimDate");
-            if (lastTimestamp) {
-              dateEl.textContent = "Last claim: " + new Date(lastTimestamp).toLocaleString("en-GB");
-            }
-            updateTimer();
-          });
-        function updateTimer() {
-          const btn = container.querySelector("#claimActionBtn"),
-            timer = container.querySelector("#claimTimer");
-          if (remaining <= 0) {
-            btn.disabled = false;
-            btn.classList.remove("disabled");
-            btn.classList.add("enabled");
-            btn.onclick = doClaim;
-            timer.textContent = "00h 00m 00s";
-          } else {
-            btn.disabled = true;
-            btn.classList.remove("enabled");
-            btn.classList.add("disabled");
-            const h = Math.floor(remaining / 3600000),
-              m = Math.floor((remaining % 3600000) / 60000),
-              s = Math.floor((remaining % 60000) / 1000);
-            timer.textContent = `${h}h ${m}m ${s}s`;
-            remaining -= 1000;
-            setTimeout(updateTimer, 1000);
-          }
-        }
-      }
-
-      /* AÇÕES */
-      window.doTransfer = async function () {
-        const amt = parseFloat(document.getElementById("amt").value),
-          toId = document.getElementById("toId").value.trim();
-        await fetch(API + "/api/transfer", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ toId, amount: amt }),
-        });
-        loadBalance();
-      };
-      window.doPayBill = async function () {
-        const billId = document.getElementById("billId").value.trim();
-        await fetch(API + "/api/bill/pay", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ billId }),
-        });
-        loadModule("bills");
-      };
-
-      // per-item pay button (same endpoint)
-      window.payBillItem = async function (billId) {
-        if (!confirm("Confirm pay bill " + billId + " ?")) return;
+                const icon = new Image();
+                icon.src = '/favicon.ico';
+                await new Promise((resolve) => { icon.onload = resolve; icon.onerror = resolve; });
+                ctx.drawImage(icon, width-260, 40, 180, 180);
+            } catch(e) {}
+            // QR Code
+            try {
+                const qrDataUrl = await QRCode.toDataURL(txId, { errorCorrectionLevel: 'H', margin: 1, width: 220 });
+                const qrImg = new Image();
+                qrImg.src = qrDataUrl;
+                await new Promise(resolve => { qrImg.onload = resolve; });
+                const qrX = (width - 220) / 2;
+                const qrY = height - 350;
+                ctx.drawImage(qrImg, qrX, qrY, 220, 220);
+                ctx.fillStyle = '#555';
+                ctx.font = '22px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Scan to verify transaction', width/2, qrY + 260);
+            } catch(e) { console.warn("QR error", e); }
+            // Download
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${txId}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("Receipt downloaded");
+            });
+        } catch(err) { showToast(err.message, true); }
+    }
+    async function loadCard() {
+        const container = document.getElementById('dynamicContent');
         try {
-          const res = await fetch(API + "/api/bill/pay", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ billId }),
-          });
-          if (!res.ok) {
-            const j = await res.json();
-            alert("Error: " + (j.error || "unknown"));
-          } else {
-            loadModule("bills");
-            loadBalance();
-          }
-        } catch (e) {
-          alert("Error paying");
+            const res = await fetch(`${API}/api/card`, { method:"POST", headers: authHeaders() });
+            if(!res.ok) throw new Error();
+            const { cardCode } = await res.json();
+            container.innerHTML = `<div class="card-modern" style="text-align:center;">
+                <div class="bank-card"><div class="magstripe"></div><div class="info"><p>💳 Holder: ${escapeHtml(session.userId)}</p><p>🔑 Card Code: <strong>${escapeHtml(cardCode)}</strong></p></div></div>
+                <div style="display:flex; gap:12px; justify-content:center; margin-top:12px;">
+                    <button class="copy-btn" id="copyCardBtn">Copy Card Code</button>
+                    <button class="btn btn-secondary" id="resetCardBtn">Reset Card</button>
+                </div>
+                <hr style="margin:20px 0;">
+                <h4>Create Bill</h4>
+                <input type="text" id="billAmount" placeholder="Amount (coins)">
+                <input type="text" id="billFromId" placeholder="Debtor ID (who pays)">
+                <button class="btn btn-primary" id="createBillBtn">Create Bill</button>
+            </div>`;
+            document.getElementById('copyCardBtn').onclick = () => copyText(cardCode);
+            document.getElementById('resetCardBtn').onclick = async () => { await fetch(`${API}/api/card/reset`, { method:"POST", headers: authHeaders() }); showToast("Card reset!"); loadCard(); };
+            document.getElementById('createBillBtn').onclick = async () => {
+                const amount = parseFloat(document.getElementById('billAmount').value);
+                const fromId = document.getElementById('billFromId').value.trim();
+                if(!amount || !fromId) return showToast("Fill fields", true);
+                const res = await fetch(`${API}/api/bill/create`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ fromId, toId: session.userId, amount }) });
+                if(res.ok) { showToast("Bill created!"); loadModule("bills"); } else showToast("Error", true);
+            };
+        } catch(e) { container.innerHTML = `<div class="card-modern">Error loading card</div>`; }
+    }
+    async function loadBills() {
+        const container = document.getElementById('dynamicContent');
+        container.innerHTML = `<div class="card-modern">Loading bills...</div>`;
+        const res = await fetch(`${API}/api/bill/list`, { method:"POST", headers: authHeaders(), body: JSON.stringify({page:1}) });
+        if(!res.ok) return;
+        const { toPay = [], toReceive = [] } = await res.json();
+        let html = `<div class="card-modern"><h3>📌 Bills to pay</h3>`;
+        for(const b of toPay) {
+            html += `<div class="bill-item"><div>🧾 ID: ${b.id}<br>👤 From: ${b.from_id}<br>💰 ${parseFloat(b.amount).toFixed(8)} coins<br>📅 ${new Date(b.date).toLocaleString()}</div>
+                    <div><button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button><button class="btn btn-primary" style="margin-left:8px;" onclick="payBill('${b.id}')">Pay</button></div></div>`;
         }
-      };
-
-      window.doCreateBill = async function () {
-        const amount = parseFloat(document.getElementById("billAmount").value),
-          fromId = document.getElementById("billFrom").value.trim();
-        if (!amount || !fromId) return alert("Fill Amount and From");
-        const res = await fetch(API + "/api/bill/create", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ fromId, toId: session.userId, amount }),
-        });
-        if (res.ok) loadModule("bills");
-        else {
-          const j = await res.json();
-          alert(`Error: ${j.error || "unknown"}`);
+        html += `<h3>📥 Bills to receive</h3>`;
+        for(const b of toReceive) {
+            html += `<div class="bill-item"><div>🧾 ID: ${b.id}<br>👤 To: ${b.to_id}<br>💰 ${parseFloat(b.amount).toFixed(8)} coins<br>📅 ${new Date(b.date).toLocaleString()}</div>
+                    <div><button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button></div></div>`;
         }
-      };
-
-      window.resetCard = async function () {
-        await fetch(API + "/api/card/reset", { method: "POST", headers: authHeaders() });
-        loadModule("card");
-      };
-
-      window.doRestore = async function () {
-        const bid = document.getElementById("backupId").value.trim();
-        if (!bid) return alert("Provide backup ID");
-        await fetch(API + "/api/backup/restore", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ backupId: bid }),
-        });
-        loadModule("backup");
-        loadBalance();
-      };
-
-      window.doCreateBackup = async function () {
-        await fetch(API + "/api/backup/create", { method: "POST", headers: authHeaders() });
-        loadModule("backup");
-      };
-
-      window.doUnregister = async function () {
-        await fetch(API + "/api/account/unregister", { method: "POST", headers: authHeaders() });
-        show("login");
-      };
-
-      window.doLogout = async function () {
-        await fetch(API + "/api/logout", { method: "POST", headers: authHeaders() });
-        localStorage.removeItem("session");
-        show("login");
-      };
-
-      window.doChange = async function () {
-        const nu = document.getElementById("newUser").value.trim(),
-          np = document.getElementById("newPass").value,
-          cp = document.getElementById("confirmPass").value;
-        if (!np || np !== cp) return alert("Passwords must match");
-        await fetch(API + "/api/account/change", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ username: nu || undefined, password: np }),
-        });
-        alert("Credentials updated, please log in again");
-        doLogout();
-      };
-
-      window.doClaim = async function () {
+        container.innerHTML = html;
+    }
+    window.payBill = async (billId) => {
+        const res = await fetch(`${API}/api/bill/pay`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ billId }) });
+        if(res.ok) { showToast("Bill paid!"); loadBills(); refreshBalanceUI(); } else showToast("Failed", true);
+    };
+    async function loadTransfer() {
+        document.getElementById('dynamicContent').innerHTML = `<div class="card-modern">
+            <h3>💸 Send coins</h3>
+            <input type="text" id="transferToId" placeholder="Recipient ID">
+            <input type="number" id="transferAmount" step="0.00000001" placeholder="Amount (coins)">
+            <button class="btn btn-primary" id="doTransferBtn">Transfer</button>
+            <hr style="margin:20px 0;">
+            <h3>🧾 Pay bill by ID</h3>
+            <input type="text" id="payBillId" placeholder="Bill ID">
+            <button class="btn btn-secondary" id="doPayBillBtn">Pay Bill</button>
+        </div>`;
+        document.getElementById('doTransferBtn').onclick = async () => {
+            const toId = document.getElementById('transferToId').value.trim();
+            const amount = parseFloat(document.getElementById('transferAmount').value);
+            if(!toId || isNaN(amount)) return showToast("Fill fields", true);
+            const res = await fetch(`${API}/api/transfer`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ toId, amount }) });
+            if(res.ok) { showToast("Transfer completed!"); refreshBalanceUI(); } else showToast("Transfer failed", true);
+        };
+        document.getElementById('doPayBillBtn').onclick = async () => {
+            const billId = document.getElementById('payBillId').value.trim();
+            if(!billId) return;
+            const res = await fetch(`${API}/api/bill/pay`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ billId }) });
+            if(res.ok) { showToast("Bill paid!"); refreshBalanceUI(); } else showToast("Error", true);
+        };
+    }
+    async function loadCheck() {
+        const container = document.getElementById('dynamicContent');
+        container.innerHTML = `<div class="card-modern">
+            <h3>🔍 Check Transaction</h3>
+            <input type="text" id="checkTxId" placeholder="Transaction ID">
+            <button class="btn btn-primary" id="doCheckTxBtn">Check</button>
+            <div id="checkResult" style="margin-top:1rem;"></div>
+        </div>`;
+        document.getElementById('doCheckTxBtn').onclick = async () => {
+            const txId = document.getElementById('checkTxId').value.trim();
+            if(!txId) return showToast("Enter TX ID", true);
+            const res = await fetch(`${API}/api/tx/${txId}`, { headers: authHeaders() });
+            if(!res.ok) { document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">❌ Transaction not found</div>`; return; }
+            const data = await res.json();
+            if(!data.success) { document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">❌ Invalid transaction</div>`; return; }
+            const t = data.tx;
+            document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">
+                <strong>📄 Transaction Details</strong><br>
+                🆔 ID: ${t.id}<br>
+                📅 Date: ${new Date(t.date).toLocaleString()}<br>
+                👤 From: ${t.from}<br>
+                👤 To: ${t.to}<br>
+                💰 Amount: ${parseFloat(t.amountCoins).toFixed(8)} coins<br>
+                <div style="margin-top:12px;"><button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
+                <button class="icon-btn" onclick="downloadReceipt('${t.id}')" style="margin-left:8px;">⬇️ Download Receipt</button></div>
+            </div>`;
+        };
+    }
+    let claimRemaining = 0, claimInterval = null;
+    async function loadClaim() {
+        const container = document.getElementById('dynamicContent');
+        container.innerHTML = `<div class="card-modern" style="text-align:center;"><h3>🎁 Daily reward</h3><button id="claimBtn" class="btn btn-primary" disabled>Waiting</button><div id="claimTimer" style="margin-top:12px;">--</div></div>`;
+        const statusRes = await fetch(`${API}/api/claim/status`, { headers: authHeaders() });
+        if(statusRes.ok) {
+            const { cooldownRemainingMs } = await statusRes.json();
+            claimRemaining = cooldownRemainingMs;
+            const updateUI = () => {
+                const btn = document.getElementById('claimBtn');
+                const timerDiv = document.getElementById('claimTimer');
+                if(claimRemaining <= 0) {
+                    if(btn) { btn.disabled = false; btn.innerText = "🎁 Claim Now"; }
+                    if(timerDiv) timerDiv.innerText = "Ready!";
+                    if(claimInterval) clearInterval(claimInterval);
+                } else {
+                    if(btn) { btn.disabled = true; btn.innerText = "⏳ Cooldown"; }
+                    const secs = Math.floor(claimRemaining/1000);
+                    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+                    if(timerDiv) timerDiv.innerText = `⏱️ ${h}h ${m}m ${s}s`;
+                    claimRemaining -= 1000;
+                }
+            };
+            updateUI();
+            if(claimInterval) clearInterval(claimInterval);
+            claimInterval = setInterval(() => { if(claimRemaining > 0) { claimRemaining -= 1000; updateUI(); } else clearInterval(claimInterval); }, 1000);
+        }
+        document.getElementById('claimBtn').onclick = async () => {
+            const res = await fetch(`${API}/api/claim`, { method:"POST", headers: authHeaders() });
+            const data = await res.json();
+            if(res.ok) { showToast(`🎉 You claimed ${data.claimed} coins!`); refreshBalanceUI(); loadClaim(); } 
+            else if(res.status === 429) showToast("Cooldown active", true);
+            else showToast("Claim failed", true);
+        };
+    }
+    async function loadModule(tab) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+        if(tab === 'dashboard') await renderDashboard();
+        else if(tab === 'transactions') await loadTransactions();
+        else if(tab === 'card') await loadCard();
+        else if(tab === 'bills') await loadBills();
+        else if(tab === 'transfer') await loadTransfer();
+        else if(tab === 'check') await loadCheck();
+        else if(tab === 'claim') await loadClaim();
+    }
+    // Backup & Settings
+    async function refreshBackupList() {
+        const res = await fetch(`${API}/api/backup/list`, { method:"POST", headers: authHeaders() });
+        if(res.ok) {
+            const { backups } = await res.json();
+            const container = document.getElementById('backupListContainer');
+            container.innerHTML = backups.map(code => `<div class="backup-item"><span class="backup-code">${escapeHtml(code)}</span><button class="copy-btn" onclick="copyText('${code}')">Copy</button></div>`).join('');
+            if(!backups.length) container.innerHTML = '<div style="padding:8px;">No backups</div>';
+        }
+    }
+    window.closeSettingsModal = () => document.getElementById('settingsModal').style.display = 'none';
+    async function doCreateBackup() { await fetch(`${API}/api/backup/create`, { method:"POST", headers: authHeaders() }); showToast("Backup created!"); refreshBackupList(); }
+    async function doRestoreBackup() { const code = document.getElementById('restoreBackupCode').value.trim(); if(!code) return showToast("Enter code", true); const res = await fetch(`${API}/api/backup/restore`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ backupId: code }) }); if(res.ok) { showToast("Restore completed!"); refreshBalanceUI(); refreshBackupList(); } else showToast("Restore failed", true); }
+    async function changeCredentials() { const username = document.getElementById('newUsername').value.trim(); const pass = document.getElementById('newPassword').value; const confirm = document.getElementById('confirmNewPassword').value; if(pass !== confirm) return showToast("Passwords mismatch", true); const res = await fetch(`${API}/api/account/change`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ username: username || undefined, password: pass }) }); if(res.ok) { showToast("Credentials changed! Login again."); doLogout(); } else showToast("Error", true); }
+    async function doUnregister() { if(confirm("Permanently delete account?")) { await fetch(`${API}/api/account/unregister`, { method:"POST", headers: authHeaders() }); doLogout(); } }
+    async function doLogout() { await fetch(`${API}/api/logout`, { method:"POST", headers: authHeaders() }).catch(()=>{}); localStorage.removeItem("session"); window.location.reload(); }
+    function initAuthEvents() {
+        document.getElementById('loginSubmitBtn').onclick = async () => {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const res = await fetch(`${API}/api/login`, { method:"POST", headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password}) });
+            const data = await res.json();
+            if(data.sessionCreated && data.passwordCorrect) {
+                session = { username, sessionId: data.sessionId, userId: data.userId };
+                localStorage.setItem('session', JSON.stringify(session));
+                document.getElementById('loginRegisterOverlay').style.display = 'none';
+                startApp();
+            } else showToast("Invalid credentials", true);
+        };
+        document.getElementById('switchToRegisterBtn').onclick = () => { document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; document.getElementById('authModalTitle').innerText="📝 Register"; };
+        document.getElementById('switchToLoginBtn').onclick = () => { document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; document.getElementById('authModalTitle').innerText="🔐 Access Account"; };
+        document.getElementById('registerSubmitBtn').onclick = async () => {
+            const user = document.getElementById('regUsername').value;
+            const pass = document.getElementById('regPassword').value;
+            const conf = document.getElementById('regConfirm').value;
+            if(pass !== conf) return showToast("Passwords differ", true);
+            const res = await fetch(`${API}/api/register`, { method:"POST", headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: user, password: pass }) });
+            if(res.ok) { showToast("Account created! Please login."); document.getElementById('switchToLoginBtn').click(); } else showToast("Registration failed", true);
+        };
+    }
+    function startApp() {
+        document.getElementById('headerUsername').innerText = session.username;
+        document.getElementById('headerUserId').innerText = session.userId;
+        document.getElementById('copyUserIdHeaderBtn').onclick = () => copyText(session.userId);
+        refreshBalanceUI();
+        setInterval(refreshBalanceUI, 8000);
+        loadModule('dashboard');
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.onclick = () => loadModule(btn.dataset.tab));
+        document.getElementById('openSettingsModalBtn').onclick = async () => { await refreshBackupList(); document.getElementById('settingsModal').style.display = 'flex'; };
+        document.getElementById('doCreateBackupBtn').onclick = doCreateBackup;
+        document.getElementById('doRestoreBackupBtn').onclick = doRestoreBackup;
+        document.getElementById('doChangeCredsBtn').onclick = changeCredentials;
+        document.getElementById('doUnregisterBtn').onclick = doUnregister;
+        document.getElementById('doLogoutBtn').onclick = doLogout;
+    }
+    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
+    window.downloadReceipt = downloadReceipt;
+    const stored = localStorage.getItem('session');
+    if(stored) {
         try {
-          const res = await fetch(API + "/api/claim", { method: "POST", headers: authHeaders() });
-          const j = await res.json();
-          if (res.ok) {
-            alert(`🎉 You claimed ${j.claimed} coins!`);
-            loadBalance();
-            loadModule("claim");
-          } else if (res.status === 429) {
-            alert(`⏳ Cooldown active. Next claim in ${j.nextClaimInMs} ms`);
-          } else {
-            alert(`❌ Claim error: ${j.error || "unknown"}`);
-          }
-        } catch (err) {
-          console.error("❌ Claim failed:", err);
-          alert("❌ Claim failed. Try again later.");
-        }
-      };
-
-      // listeners
-      document.getElementById("loginBtn").onclick = login;
-      document.getElementById("goRegisterBtn").onclick = () => show("register");
-      document.getElementById("registerBtn").onclick = doRegister;
-      document.getElementById("backBtn").onclick = () => show("login");
-      document.querySelectorAll(".nav .btn").forEach((b) => (b.onclick = () => loadModule(b.dataset.screen)));
-      document.getElementById("settingsBtn").onclick = () => loadModule("settings");
-      document.getElementById("userBtn").onclick = () => loadModule("backup");
-      document.getElementById("txBtn").onclick = () => loadModule("txcheck");
-
-      // user ID copy button
-      document.getElementById("copyUserIdBtn").onclick = function () {
-        if (session && session.userId) copySilent(session.userId);
-      };
-
-      function init() {
-        const s = localStorage.getItem("session");
-        if (!s) return show("login");
-        session = JSON.parse(s);
-        if (!session.sessionId) return show("login");
-        document.getElementById("dispUser").textContent = session.username;
-        document.getElementById("dispUserId").textContent = session.userId;
-        show("main");
-        loadBalance();
-        setInterval(loadBalance, 2000);
-        loadModule("history");
-      }
-
-      // small helpers
-      function escapeHtml(str) {
-        if (!str && str !== 0) return "";
-        return String(str).replace(/[&<>"]/g, function (c) {
-          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
-        });
-      }
-      function escapeForInline(str) {
-        if (!str && str !== 0) return "";
-        return String(str).replace(/'/g, "\\'");
-      }
-
-      init();
-    })();
-  </script>
+            session = JSON.parse(stored);
+            if(session.sessionId) { document.getElementById('loginRegisterOverlay').style.display = 'none'; startApp(); } 
+            else throw new Error();
+        } catch(e) { localStorage.removeItem('session'); initAuthEvents(); }
+    } else initAuthEvents();
+</script>
 </body>
 </html>
