@@ -1,6 +1,6 @@
 <h1 align="center">
 
-  [CoinBot](https://discord.com/oauth2/authorize?client_id=1387445776854290533&permissions=824636869632&integration_type=0&scope=bot) - Discord's best economy bot!
+  [CoinBot](https://discord.com/oauth2/authorize?client_id=1391067775077978214) - Best Economy System!
   <img src="logo.png" height="300">
 </h1>
   <br><br>
