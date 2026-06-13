@@ -1,20 +1,38 @@
 // index.js
-// Entrada principal do projeto Coin Bot
-// - inicia API, bot, túnel permanente (cloudflared) e dmQueue
+// Main entry for Coin Bot
+// Fully respects .env configuration for all components
 
+require('dotenv').config();
 const path = require('path');
+const fs = require('fs-extra');
 const { startApiServer } = require('./api');
-const botModule = require('./bot'); // assume startBot() está aqui
+const botModule = require('./bot');
 const { processDMQueue } = require('./dmQueue');
-
-// cloudflare.js exporta startTunnel() e stopTunnel()
 const { startTunnel, stopTunnel, CLOUD_DIR } = require('./cloudflare');
+const { startTempTunnel, stopTempTunnel } = require('./tempTunnel');
+const { getAllUsers, db } = require('./database');
 
+// ========================
+// ENVIRONMENT FLAGS
+// ========================
+const BOT_ENABLED = process.env.BOT_ENABLED !== 'false';               // default true
+const API_ENABLED = process.env.API_ENABLED !== 'false';               // default true
+const PERMANENT_TUNNEL_ENABLED = process.env.CLOUDFLARE_ENABLED === '1' || process.env.CLOUDFLARE_ENABLED === 'true';
+const TEMP_TUNNEL_ENABLED = process.env.TEMP_TUNNEL_ENABLED === '1' || process.env.TEMP_TUNNEL_ENABLED === 'true';
+const GRAPH_UPDATER_ENABLED = process.env.GRAPH_UPDATER_ENABLED !== 'false';
+const CLEANUP_ENABLED = process.env.CLEANUP_ENABLED !== 'false';
+
+// ========================
+// 1. BOT START (if enabled)
+// ========================
 async function safeStartBot() {
+  if (!BOT_ENABLED) {
+    console.log('[index] Bot is disabled via BOT_ENABLED=false');
+    return null;
+  }
   try {
     if (typeof botModule.startBot === 'function') {
       const maybe = botModule.startBot();
-      // suporta retorno sync ou Promise
       if (maybe && typeof maybe.then === 'function') {
         return await maybe.catch(err => {
           console.error('[index] startBot() promise rejected:', err);
@@ -23,7 +41,7 @@ async function safeStartBot() {
       }
       return maybe;
     } else {
-      console.warn('[index] startBot() not found in ./bot module.');
+      console.warn('[index] startBot() not found in ./bot module');
       return null;
     }
   } catch (err) {
@@ -33,7 +51,6 @@ async function safeStartBot() {
 }
 
 async function getClientFromBotModule() {
-  // algumas implementações expõem getClient()
   if (typeof botModule.getClient === 'function') {
     try {
       return await botModule.getClient();
@@ -44,111 +61,13 @@ async function getClientFromBotModule() {
   return null;
 }
 
-(async () => {
-  console.log('[index] starting...');
-
-  let server;
-  let tunnelHandle = null;
-  let botClient = null;
-
-  try {
-    // 1) Start API server and wait until it's listening
-    server = await startApiServer();
-    console.log('[index] API server started.');
-
-    // 2) Start bot (may return client or not)
-    botClient = await safeStartBot();
-
-    // fallback: try to obtain client via getClient()
-    if (!botClient) {
-      botClient = await getClientFromBotModule();
-    }
-
-    // ✅ CORREÇÃO: só inicia dmQueue quando o bot estiver pronto
-    if (botClient && typeof botClient.once === 'function') {
-      botClient.once('ready', () => {
-        console.log(`[index] Bot started: ${botClient.user ? botClient.user.tag : '(user unknown)'}`);
-
-        try {
-          if (typeof processDMQueue === 'function') {
-            processDMQueue(botClient);
-            console.log('[index] dmQueue started.');
-          }
-        } catch (err) {
-          console.warn('[index] failure at starting dmQueue:', err);
-        }
-      });
-    } else {
-      console.warn('[index] botClient is null — dmQueue will NOT start');
-    }
-
-    // 3) Start permanent cloudflared tunnel
-    try {
-      console.log('[index] starting permanent tunnel (cloudflared) — folder:', CLOUD_DIR);
-
-      const res = await startTunnel();
-      tunnelHandle = res && res.child ? res.child : null;
-
-      if (res && res.urlHint) {
-        console.log('[index] cloudflared hint url:', res.urlHint);
-      } else {
-        console.log('[index] cloudflared started (no url trycloudflare).');
-      }
-
-    } catch (err) {
-      console.warn('[index] failed at starting cloudflared:', err && err.message ? err.message : err);
-    }
-
-    // 4) shutdown handling
-    process.on('SIGINT', async () => {
-      console.log('[index] SIGINT received. Exiting...');
-
-      try {
-        if (server && typeof server.close === 'function') {
-          console.log('[index] closing HTTP server...');
-          await new Promise(r => server.close(r));
-        }
-      } catch {}
-
-      try {
-        if (botClient && typeof botClient.destroy === 'function') {
-          console.log('[index] turning bot off...');
-          try { botClient.destroy(); } catch {}
-        }
-      } catch {}
-
-      try {
-        const stopped = stopTunnel();
-        if (stopped) console.log('[index] cloudflared stopped.');
-      } catch {}
-
-      process.exit(0);
-    });
-
-    // logs globais
-    process.on('unhandledRejection', (reason) => {
-      console.error('[index] unhandledRejection:', reason);
-    });
-
-    process.on('uncaughtException', (err) => {
-      console.error('[index] uncaughtException:', err);
-    });
-
-  } catch (err) {
-    console.error('[index] Startup error:', err);
-
-    try { stopTunnel(); } catch {}
-
-    process.exit(1);
-  }
-})();
-
-const { getAllUsers, db } = require('./database');
-
+// ========================
+// 2. GRAPH UPDATER (optimized)
+// ========================
 async function updateAllUserGraphs() {
+  if (!GRAPH_UPDATER_ENABLED) return;
   try {
-    console.log('[grafic] updating user graphs...');
-
+    console.log('[graph] Updating user graph data...');
     const users = getAllUsers();
     if (!users || users.length === 0) return;
 
@@ -157,7 +76,6 @@ async function updateAllUserGraphs() {
     const msDay = 24 * 60 * 60 * 1000;
     const cutoff = new Date(now - days * msDay).toISOString();
 
-    // prepara query uma vez (performance)
     const txStmt = db.prepare(`
       SELECT date, from_id, to_id, amount
       FROM transactions
@@ -168,103 +86,264 @@ async function updateAllUserGraphs() {
 
     for (const user of users) {
       const userId = user.id;
-
       try {
         let currentBalance = Number(user.coins || 0);
-
-        // pega transações recentes
         const txs = txStmt.all(cutoff, userId, userId);
-
-        // array de 30 dias (saldo)
         const daily = new Array(30).fill(0);
-
-        // começa do saldo atual
         let balance = currentBalance;
-
-        // índice do dia atual
         let dayIndex = 29;
         daily[dayIndex] = balance;
-
         let lastDay = Math.floor(now / msDay);
 
         for (const tx of txs) {
           const txTime = new Date(tx.date).getTime();
           const txDay = Math.floor(txTime / msDay);
-
-          // volta dias se necessário
           while (lastDay > txDay && dayIndex > 0) {
             dayIndex--;
             daily[dayIndex] = balance;
             lastDay--;
           }
-
-          // reverte transação (porque estamos voltando no tempo)
-          if (tx.from_id === userId) {
-            balance += tx.amount;
-          } else if (tx.to_id === userId) {
-            balance -= tx.amount;
-          }
+          if (tx.from_id === userId) balance += tx.amount;
+          else if (tx.to_id === userId) balance -= tx.amount;
         }
-
-        // preenche dias restantes
         while (dayIndex > 0) {
           dayIndex--;
           daily[dayIndex] = balance;
         }
 
-        // salva no banco
         const fields = [];
         const values = [];
-
         for (let i = 0; i < 30; i++) {
           fields.push(`d${i + 1} = ?`);
           values.push(daily[i]);
         }
-
         db.prepare(`
           INSERT INTO user_grafic (user_id)
           VALUES (?)
-          ON CONFLICT(user_id) DO UPDATE SET
-          ${fields.join(', ')}
+          ON CONFLICT(user_id) DO UPDATE SET ${fields.join(', ')}
         `).run(userId, ...values);
-
       } catch (err) {
-        console.error(`[grafic] user ${userId} error:`, err);
+        console.error(`[graph] User ${userId} error:`, err);
       }
     }
-
-    console.log('[grafic] update finished.');
-
+    console.log('[graph] Update finished.');
   } catch (err) {
-    console.error('[grafic] fatal error:', err);
+    console.error('[graph] Fatal error:', err);
   }
 }
 
 function startGraphUpdater() {
-  // roda imediatamente
+  if (!GRAPH_UPDATER_ENABLED) {
+    console.log('[graph] Graph updater disabled via env');
+    return;
+  }
   updateAllUserGraphs();
-
-  // roda a cada 5 minutos
-  setInterval(() => {
-    updateAllUserGraphs();
-  }, 5 * 60 * 1000);
+  setInterval(() => updateAllUserGraphs(), 5 * 60 * 1000);
 }
 
-startGraphUpdater();
+// ========================
+// 3. MEMORY & TEMP CLEANUP
+// ========================
+const TEMP_DIRS = [path.join(__dirname, 'temp'), path.join(__dirname, 'site', 'temp'), CLOUD_DIR].filter(Boolean);
 
-const { startTempTunnel, stopTempTunnel } = require('./tempTunnel');
-
-(async () => {
-  try {
-    const res = await startTempTunnel(); // usa env por padrão
-    if (res && res.urlHint) {
-      console.log('[index] temp tunnel URL:', res.urlHint);
-    } else if (res && res.disabled) {
-      console.log('[index] temp tunnel disabled via env');
-    } else {
-      console.log('[index] temp tunnel started (no trycloudflare URL captured)');
+async function cleanupTempFolders() {
+  let totalCleaned = 0;
+  for (const dir of TEMP_DIRS) {
+    if (dir && fs.existsSync(dir)) {
+      try {
+        const files = await fs.readdir(dir);
+        for (const file of files) {
+          const filePath = path.join(dir, file);
+          const stat = await fs.stat(filePath);
+          if (stat.isFile()) {
+            await fs.remove(filePath);
+            totalCleaned++;
+          }
+        }
+        console.log(`[cleanup] Temp folder cleaned: ${dir} (${files.length} files removed)`);
+      } catch (err) {
+        console.warn(`[cleanup] Failed to clean ${dir}:`, err.message);
+      }
     }
-  } catch (err) {
-    console.error('[index] failed to start temp tunnel:', err);
   }
-})();
+  return totalCleaned;
+}
+
+function logMemoryUsage() {
+  const used = process.memoryUsage();
+  const heapUsed = (used.heapUsed / 1024 / 1024).toFixed(2);
+  const heapTotal = (used.heapTotal / 1024 / 1024).toFixed(2);
+  const rss = (used.rss / 1024 / 1024).toFixed(2);
+  console.log(`[memory] RSS: ${rss} MB | Heap Used: ${heapUsed} MB | Heap Total: ${heapTotal} MB`);
+  return { heapUsed: parseFloat(heapUsed), heapTotal: parseFloat(heapTotal), rss: parseFloat(rss) };
+}
+
+async function performCleanup() {
+  if (!CLEANUP_ENABLED) return;
+  console.log('[cleanup] Starting memory and temp cleanup...');
+  const before = logMemoryUsage();
+  const filesRemoved = await cleanupTempFolders();
+
+  if (global.gc) {
+    global.gc();
+    console.log('[cleanup] Manual garbage collection triggered.');
+  } else {
+    console.log('[cleanup] No manual GC available (run with --expose-gc for better cleanup)');
+  }
+
+  const after = logMemoryUsage();
+  const heapFreed = (before.heapUsed - after.heapUsed).toFixed(2);
+  console.log(`[cleanup] Completed. Removed ${filesRemoved} temp files. Heap memory freed: ~${heapFreed} MB`);
+}
+
+// ========================
+// 4. MAIN BOOTSTRAP
+// ========================
+let server = null;
+let tunnelHandle = null;
+let botClient = null;
+
+async function main() {
+  console.log('[index] Starting Coin Bank system...');
+
+  // 1) Start Discord bot (if enabled)
+  if (BOT_ENABLED) {
+    botClient = await safeStartBot();
+    if (!botClient) {
+      botClient = await getClientFromBotModule();
+    }
+  } else {
+    console.log('[index] Bot disabled, skipping.');
+  }
+
+  // 2) Start API server (if enabled)
+  if (API_ENABLED) {
+    server = await startApiServer();
+    console.log('[index] API server started.');
+  } else {
+    console.log('[index] API server disabled via API_ENABLED=false');
+  }
+
+  // 3) Start DM Queue processor once bot is ready (only if bot exists)
+  if (botClient && typeof botClient.once === 'function') {
+    botClient.once('ready', () => {
+      console.log(`[index] Bot ready: ${botClient.user ? botClient.user.tag : '(unknown)'}`);
+      try {
+        if (typeof processDMQueue === 'function') {
+          processDMQueue(botClient);
+          console.log('[index] DM Queue started.');
+        }
+      } catch (err) {
+        console.warn('[index] Failed to start DM Queue:', err);
+      }
+    });
+  } else if (botClient) {
+    try {
+      if (typeof processDMQueue === 'function') {
+        processDMQueue(botClient);
+        console.log('[index] DM Queue started (bot already ready).');
+      }
+    } catch (err) {
+      console.warn('[index] Failed to start DM Queue:', err);
+    }
+  } else {
+    console.warn('[index] Bot client not available – DM Queue will not start.');
+  }
+
+  // 4) Start permanent cloudflared tunnel (if enabled)
+  if (PERMANENT_TUNNEL_ENABLED) {
+    try {
+      console.log('[index] Starting permanent tunnel (cloudflared)...');
+      const res = await startTunnel();
+      tunnelHandle = res && res.child ? res.child : null;
+      if (res && res.urlHint) console.log('[index] Permanent tunnel URL hint:', res.urlHint);
+      else console.log('[index] Permanent tunnel started (no trycloudflare URL captured)');
+    } catch (err) {
+      console.warn('[index] Failed to start permanent tunnel:', err.message);
+    }
+  } else {
+    console.log('[index] Permanent tunnel disabled via CLOUDFLARE_ENABLED=0');
+  }
+
+  // 5) Start temporary tunnel (if enabled)
+  if (TEMP_TUNNEL_ENABLED) {
+    try {
+      const tempRes = await startTempTunnel();
+      if (tempRes && tempRes.urlHint) console.log('[index] Temp tunnel URL:', tempRes.urlHint);
+      else if (tempRes && tempRes.disabled) console.log('[index] Temp tunnel disabled via env');
+      else console.log('[index] Temp tunnel started (no URL captured)');
+    } catch (err) {
+      console.error('[index] Failed to start temp tunnel:', err);
+    }
+  } else {
+    console.log('[index] Temp tunnel disabled via TEMP_TUNNEL_ENABLED=false');
+  }
+
+  // 6) Start graph updater (if enabled)
+  startGraphUpdater();
+
+  // 7) Start periodic cleanup (if enabled)
+  if (CLEANUP_ENABLED) {
+    setInterval(() => performCleanup(), 5 * 60 * 1000);
+    setTimeout(() => performCleanup(), 30 * 1000);
+  } else {
+    console.log('[cleanup] Cleanup disabled via CLEANUP_ENABLED=false');
+  }
+
+  console.log('[index] All components started successfully.');
+}
+
+// ========================
+// 5. SHUTDOWN HANDLERS
+// ========================
+async function gracefulShutdown(signal) {
+  console.log(`[index] ${signal} received. Shutting down gracefully...`);
+  if (server && typeof server.close === 'function') {
+    try {
+      await new Promise(resolve => server.close(resolve));
+      console.log('[index] HTTP server closed.');
+    } catch (err) {
+      console.warn('[index] Error closing HTTP server:', err);
+    }
+  }
+  if (botClient && typeof botClient.destroy === 'function') {
+    try {
+      botClient.destroy();
+      console.log('[index] Bot destroyed.');
+    } catch (err) {
+      console.warn('[index] Error destroying bot:', err);
+    }
+  }
+  if (PERMANENT_TUNNEL_ENABLED) {
+    try {
+      stopTunnel();
+      console.log('[index] Permanent tunnel stopped.');
+    } catch (err) {
+      console.warn('[index] Error stopping permanent tunnel:', err);
+    }
+  }
+  if (TEMP_TUNNEL_ENABLED) {
+    try {
+      stopTempTunnel();
+      console.log('[index] Temp tunnel stopped.');
+    } catch (err) {
+      console.warn('[index] Error stopping temp tunnel:', err);
+    }
+  }
+  process.exit(0);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('unhandledRejection', (reason) => {
+  console.error('[index] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[index] Uncaught Exception:', err);
+});
+
+// Start the system
+main().catch(err => {
+  console.error('[index] Fatal error during startup:', err);
+  process.exit(1);
+});
