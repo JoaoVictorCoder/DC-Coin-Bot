@@ -157,6 +157,7 @@ client.on("guildCreate", async (guild) => {
 > - \`ajuda\` - shows you the help menu in portuguese.
 > - \`user\` - changes your account info.
 > - \`rank\` — shows the rank of the 25 most rich people.
+> - \`grafic\` — shows the balance history graphy.
 > - \`pay @user amount\` — example: \`pay @user 0.01\` to send money.
 > - \`bal\` — checks your current balance.
 > - \`bill\` - creates a bill ID to be charged.
@@ -174,7 +175,7 @@ client.on("guildCreate", async (guild) => {
 > - \`set channel_ID\` — example: \`set 1387471903832281219\` to create a ATM and rewards channel.
 > 
 > 💛 Help this project with bitcoins donation. Any help is welcome:
-> \`\`\`bc1qs9fd9fnngn9svkw8vv5npd7fn504tqx40kuh00\`\`\`
+> \`\`\`bc1qtj6j60mj8wtkzt35hzv44dvjy37tmcmn9pvjtc\`\`\`
 > 
 > 🌌 [> COIN BANK WEBSITE <](https://bank.foxsrv.net/)
 > 💬 [> Oficial Support <](https://discord.gg/C5cAfhcdRp)
@@ -182,10 +183,12 @@ client.on("guildCreate", async (guild) => {
 > 👤 [> Privacy Policy <](https://bank.foxsrv.net/terms/privacy.html)
 > 🔩 [> API Docs <](https://bank.foxsrv.net/terms/documentation.html)
 > 🔐 [> Browser Extension <](https://chromewebstore.google.com/detail/coin-bank/lbojdaalcfajcjphlpphjchkenjpbemf)
+> 🧪 [> Minecraft Plugin <](https://www.spigotmc.org/resources/coin-card.129770/)
+> 🏪 [> Coin Store <](https://coin.foxsrv.net/)
 > 
 > 🏦 [> Add the bot in more servers <](https://discord.com/oauth2/authorize?client_id=1391067775077978214&permissions=1126864127511616&integration_type=0&scope=bot)
 > 
-> Bot Creators: MinyBaby e FoxOficial.
+> Systen developed by FoxOficial.
 `;
 
   // =====================================================================
@@ -683,7 +686,7 @@ if (cmd === 'paybill' && args.length >= 1) {
       .addFields(
         { name: '💰 Economy',    value: 'bal, rank, pay, paybill, restore' },
         { name: '🎁 Rewards',    value: 'set, claim' },
-        { name: '💸 Commands',   value: 'view, check, history, bills' },
+        { name: '💸 Commands',   value: 'view, check, history, bills, grafic' },
         { name: '🎓 User',   value: 'user, backup, global, card, cardreset' },
         { name: '🆘 Help',       value: 'help' },
         { name: 'Usage',       value: 'use @bot mention and put the command name and arguments.' },
