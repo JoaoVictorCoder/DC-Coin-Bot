@@ -1,7 +1,8 @@
 <h1 align="center">
 
+<img src="logo.png" height="300">
+
   [CoinBot](https://discord.com/oauth2/authorize?client_id=1391067775077978214) - Best Economy System!
-  <img src="logo.png" height="300">
 </h1>
   <br><br>
 
