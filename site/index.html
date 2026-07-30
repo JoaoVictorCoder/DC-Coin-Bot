@@ -13,9 +13,10 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="shortcut icon" href="/favicon.ico">
     <title>Coin Bank · Financial Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js">
+    </script>
     <style>
+        /* ----- Reset & Base ----- */
         * {
             margin: 0;
             padding: 0;
@@ -24,1144 +25,2090 @@
         }
 
         body {
-            background: #36393f;
+            background: #1a1b1e;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 1rem;
+            padding: 2rem 1.5rem;
+            color: #fff;
         }
 
+        /* ----- Main Container ----- */
         .bank-container {
-            max-width: 1400px;
+            max-width: 1300px;
             width: 100%;
             margin: 0 auto;
-            background: #2f3136;
-            border-radius: 1.5rem;
-            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.5);
+            background: #2b2d31;
+            border-radius: 2.4rem;
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.7);
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            max-height: 95vh;
+            max-height: 92vh;
+            border: 1px solid #3b3d43;
+            backdrop-filter: blur(2px);
+            transition: box-shadow 0.3s ease;
         }
 
-        /* HEADER */
+        /* ----- Header ----- */
         .bank-header {
-            background: #202225;
-            padding: 0.8rem 1.5rem;
-            border-bottom: 1px solid #404249;
+            background: #1e1f22;
+            padding: 0.9rem 2.2rem;
+            border-bottom: 1px solid #3b3d43;
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 0.8rem;
+            gap: 0.6rem;
             flex-shrink: 0;
         }
         .logo {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         .logo-icon {
-            font-size: 1.6rem;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            font-size: 1.7rem;
+            filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
         }
         .logo-text {
-            font-size: 1.2rem;
+            font-size: 1.25rem;
             font-weight: 700;
-            background: linear-gradient(135deg, #FBBF24, #F59E0B);
+            background: linear-gradient(135deg, #f0b232, #f59e0b);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
+            letter-spacing: -0.3px;
         }
         .user-name-header {
             font-size: 0.85rem;
-            font-weight: bold;
-            background: #2c2f36;
-            padding: 0.3rem 1rem;
+            font-weight: 600;
+            background: #2b2d31;
+            padding: 0.3rem 1.4rem;
             border-radius: 40px;
-            color: #FBBF24;
+            color: #f0b232;
             display: flex;
             align-items: center;
             gap: 6px;
+            border: 1px solid #3b3d43;
+            transition: border-color 0.2s;
+        }
+        .user-name-header:hover {
+            border-color: #f0b232;
         }
         .header-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
         }
         .avatar-btn {
-            background: #5865F2;
-            width: 34px;
-            height: 34px;
+            background: #5865f2;
+            width: 40px;
+            height: 40px;
             border-radius: 60px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 1rem;
-            transition: 0.2s;
+            font-size: 1.15rem;
+            transition: 0.25s ease;
+            border: none;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(88, 101, 242, 0.25);
         }
-        .avatar-btn:hover { transform: scale(1.02); background: #4752c4; }
+        .avatar-btn:hover {
+            transform: scale(1.06) translateY(-2px);
+            background: #4752c4;
+            box-shadow: 0 6px 16px rgba(88, 101, 242, 0.4);
+        }
 
-        /* BALANCE CARD */
+        /* ----- Balance Card ----- */
         .balance-card {
-            background: #202225;
-            margin: 0.8rem 1.5rem;
-            padding: 0.8rem 1.2rem;
-            border-radius: 24px;
+            background: #1e1f22;
+            margin: 0.9rem 2.2rem;
+            padding: 0.9rem 1.8rem;
+            border-radius: 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 10px;
-            border: 1px solid #404249;
+            gap: 14px;
+            border: 1px solid #3b3d43;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .balance-card:hover {
+            border-color: #5865f2;
+            box-shadow: 0 0 0 1px rgba(88, 101, 242, 0.15);
         }
         .balance-label {
-            font-size: 0.75rem;
-            color: #b9bbbe;
+            font-size: 0.7rem;
+            color: #b5b7bb;
             text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-weight: 600;
         }
         .balance-value {
-            font-size: 1.4rem;
+            font-size: 1.7rem;
             font-weight: 700;
             color: #43b581;
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.5px;
+            transition: color 0.3s;
         }
         .user-id-row {
             display: flex;
             align-items: center;
             gap: 8px;
-            background: #1e1f24;
-            padding: 0.2rem 0.8rem;
+            background: #121316;
+            padding: 0.2rem 0.8rem 0.2rem 1.2rem;
             border-radius: 40px;
+            border: 1px solid #3b3d43;
+            transition: border-color 0.2s;
+        }
+        .user-id-row:hover {
+            border-color: #5865f2;
         }
         .user-id-row span {
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 0.75rem;
-            color: #fff;
+            color: #b5b7bb;
         }
         .copy-btn-sm {
             background: #43b581;
             border: none;
-            padding: 2px 10px;
+            padding: 3px 14px;
             border-radius: 30px;
             font-size: 0.6rem;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
             color: #fff;
+            transition: 0.2s ease;
+        }
+        .copy-btn-sm:hover {
+            background: #2d8f5e;
+            transform: scale(1.04);
         }
 
-        /* TABS */
+        /* ----- Tabs ----- */
         .tabs-nav {
             display: flex;
-            background: #202225;
-            padding: 0.5rem 1rem;
-            gap: 0.5rem;
-            border-bottom: 1px solid #404249;
+            background: #1e1f22;
+            padding: 0.5rem 1.4rem;
+            gap: 0.4rem;
+            border-bottom: 1px solid #3b3d43;
             flex-shrink: 0;
             overflow-x: auto;
+            scrollbar-width: thin;
+        }
+        .tabs-nav::-webkit-scrollbar {
+            height: 3px;
+        }
+        .tabs-nav::-webkit-scrollbar-thumb {
+            background: #3b3d43;
+            border-radius: 10px;
         }
         .tab-btn {
             background: transparent;
             border: none;
-            padding: 0.7rem 1.3rem;
-            font-size: 0.85rem;
+            padding: 0.6rem 1.4rem;
+            font-size: 0.8rem;
             font-weight: 700;
-            color: #b9bbbe;
+            color: #b5b7bb;
             cursor: pointer;
-            transition: 0.2s;
+            transition: 0.25s ease;
             border-radius: 2rem;
             white-space: nowrap;
+            letter-spacing: 0.3px;
+            position: relative;
         }
-        .tab-btn:hover { color: #fff; background: #2c2f36; }
-        .tab-btn.active { color: #F59E0B; background: #2c2f36; }
+        .tab-btn::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 2px;
+            background: #f59e0b;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+        .tab-btn:hover {
+            color: #fff;
+            background: #2b2d31;
+        }
+        .tab-btn.active {
+            color: #f59e0b;
+            background: #2b2d31;
+        }
+        .tab-btn.active::after {
+            width: 60%;
+        }
 
+        /* ----- Dynamic Content ----- */
         .dynamic-content {
-            padding: 1.2rem;
+            padding: 1.4rem 2.2rem;
             overflow-y: auto;
             flex: 1;
-            background: #36393f;
+            background: #2b2d31;
+            scroll-behavior: smooth;
         }
-        .card-modern {
-            background: #2f3136;
-            border-radius: 24px;
-            padding: 1.2rem;
-            border: 1px solid #404249;
-            color: #ffffff;
-            margin-bottom: 1rem;
+        .dynamic-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        .dynamic-content::-webkit-scrollbar-thumb {
+            background: #3b3d43;
+            border-radius: 10px;
+        }
+        .dynamic-content::-webkit-scrollbar-thumb:hover {
+            background: #5865f2;
         }
 
+        /* ----- Cards & UI Components ----- */
+        .card-modern {
+            background: #1e1f22;
+            border-radius: 30px;
+            padding: 1.6rem;
+            border: 1px solid #3b3d43;
+            color: #ffffff;
+            margin-bottom: 1.2rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+        }
+        .card-modern:hover {
+            border-color: #5865f2;
+            box-shadow: 0 6px 24px rgba(88, 101, 242, 0.08);
+        }
+
+        /* ----- Buttons ----- */
         .btn {
-            padding: 8px 20px;
+            padding: 8px 24px;
             border-radius: 40px;
             font-weight: 700;
             border: none;
             cursor: pointer;
             font-size: 0.8rem;
-            transition: all 0.2s ease;
+            transition: all 0.25s ease;
             background: #4e5058;
             color: #fff;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         }
-        .btn-primary { background: #5865F2; }
-        .btn-primary:hover { background: #4752c4; transform: translateY(-1px); }
-        .btn-secondary { background: #4e5058; }
-        .btn-secondary:hover { background: #6d6f78; }
-        .btn-danger { background: #ed4245; }
-        .btn-danger:hover { background: #c03537; }
+        .btn:active {
+            transform: scale(0.95);
+        }
+        .btn-primary {
+            background: #5865f2;
+            box-shadow: 0 2px 10px rgba(88, 101, 242, 0.25);
+        }
+        .btn-primary:hover {
+            background: #4752c4;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(88, 101, 242, 0.35);
+        }
+        .btn-secondary {
+            background: #4e5058;
+        }
+        .btn-secondary:hover {
+            background: #6d6f78;
+            transform: translateY(-2px);
+        }
+        .btn-success {
+            background: #43b581;
+            box-shadow: 0 2px 10px rgba(67, 181, 129, 0.25);
+        }
+        .btn-success:hover {
+            background: #2d8f5e;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(67, 181, 129, 0.35);
+        }
+        .btn-danger {
+            background: #ed4245;
+            box-shadow: 0 2px 10px rgba(237, 66, 69, 0.2);
+        }
+        .btn-danger:hover {
+            background: #c03537;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(237, 66, 69, 0.3);
+        }
+        .btn-warning {
+            background: #faa61a;
+            color: #1e1f22;
+            box-shadow: 0 2px 10px rgba(250, 166, 26, 0.2);
+        }
+        .btn-warning:hover {
+            background: #d4890e;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(250, 166, 26, 0.3);
+        }
         .copy-btn {
             background: #43b581;
             border: none;
-            padding: 4px 12px;
+            padding: 3px 16px;
             border-radius: 30px;
             font-weight: 600;
             font-size: 0.65rem;
             cursor: pointer;
             color: #fff;
+            transition: 0.2s ease;
+        }
+        .copy-btn:hover {
+            background: #2d8f5e;
+            transform: scale(1.04);
         }
         .icon-btn {
-            background: #404249;
+            background: #3b3d43;
             border: none;
             cursor: pointer;
             font-size: 0.7rem;
-            padding: 4px 12px;
+            padding: 3px 16px;
             border-radius: 30px;
-            transition: 0.2s;
+            transition: 0.25s ease;
             color: #fff;
         }
-        .icon-btn:hover { background: #5865F2; }
+        .icon-btn:hover {
+            background: #5865f2;
+            transform: translateY(-1px);
+        }
 
-        input, textarea, select {
+        /* ----- Inputs / Selects / Textareas ----- */
+        input,
+        textarea,
+        select {
             width: 100%;
-            background: #1e1f24;
-            border: 1px solid #404249;
-            padding: 0.6rem 1rem;
-            border-radius: 1rem;
+            background: #121316;
+            border: 1px solid #3b3d43;
+            padding: 0.75rem 1.3rem;
+            border-radius: 1.6rem;
             color: #fff;
             outline: none;
-            transition: 0.2s;
-            margin-bottom: 0.8rem;
+            transition: 0.25s ease;
+            margin-bottom: 0.9rem;
+            font-size: 0.9rem;
+            box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.2);
         }
-        input:focus, textarea:focus, select:focus {
-            border-color: #5865F2;
-            box-shadow: 0 0 0 2px rgba(88,101,242,0.3);
+        input:focus,
+        textarea:focus,
+        select:focus {
+            border-color: #5865f2;
+            box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.15), inset 0 2px 6px rgba(0, 0, 0, 0.2);
         }
-        label, h3, h4, p, div { color: #ffffff; }
+        input::placeholder,
+        textarea::placeholder {
+            color: #72767d;
+        }
+        label,
+        h3,
+        h4,
+        p,
+        div {
+            color: #ffffff;
+        }
 
-        .tx-item, .bill-item {
-            background: #202225;
-            border-radius: 20px;
-            padding: 0.8rem;
+        /* ----- Transaction / Bill Items ----- */
+        .tx-item,
+        .bill-item {
+            background: #121316;
+            border-radius: 22px;
+            padding: 0.9rem 1.4rem;
             margin-bottom: 0.7rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             flex-wrap: wrap;
+            border: 1px solid #3b3d43;
+            transition: 0.25s ease;
         }
-        .tx-info, .bill-info { font-size: 0.75rem; line-height: 1.4; font-family: monospace; color: #dcddde; }
+        .tx-item:hover,
+        .bill-item:hover {
+            border-color: #5865f2;
+            box-shadow: 0 0 0 1px rgba(88, 101, 242, 0.1);
+            transform: translateX(4px);
+        }
+        .tx-info,
+        .bill-info {
+            font-size: 0.75rem;
+            line-height: 1.6;
+            font-family: 'JetBrains Mono', monospace;
+            color: #d5d7db;
+        }
+        .tx-info strong,
+        .bill-info strong {
+            color: #fff;
+        }
 
+        /* ----- Bank Card (visual) ----- */
+        .bank-card-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin: 0 auto 0.5rem;
+            max-width: 420px;
+        }
         .bank-card {
-            background: #1e1e2e;
-            border-radius: 16px;
+            background: #2d2f33; /* cinza escuro sólido */
+            border-radius: 24px;
             width: 100%;
-            max-width: 360px;
-            margin: 0 auto;
-            height: 190px;
+            height: 200px;
             position: relative;
             color: #fff;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid #4a4d54;
+            overflow: hidden;
+            transition: all 0.35s ease;
+            cursor: default;
+        }
+        .bank-card:hover {
+            transform: translateY(-4px) scale(1.005);
+            box-shadow: 0 20px 44px rgba(0, 0, 0, 0.6);
+            border-color: #8a8d94;
+        }
+        .bank-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.04), transparent 70%);
+            pointer-events: none;
+            transition: opacity 0.4s;
+        }
+        .bank-card:hover::after {
+            opacity: 0.6;
         }
         .bank-card .magstripe {
             position: absolute;
-            top: 20px;
+            top: 32px;
             left: 0;
             width: 100%;
-            height: 30px;
-            background: #000;
+            height: 34px;
+            background: #000000; /* preto 100% */
+            opacity: 1;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
         }
         .bank-card .info {
             position: absolute;
-            bottom: 16px;
-            left: 16px;
-            font-size: 12px;
+            bottom: 22px;
+            left: 26px;
+            font-size: 14px;
+            line-height: 1.7;
+            z-index: 2;
         }
-        .bank-card .info p { margin: 4px 0; word-break: break-all; }
-
-        .graph-container { background: #1e1f24; border-radius: 20px; padding: 0.8rem; margin-bottom: 1rem; }
-        canvas { max-height: 280px; width: 100%; }
-        .graph-buttons {
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-            margin: 1rem 0;
-            flex-wrap: wrap;
-        }
-        .graph-btn {
-            background: #404249;
-            border: none;
-            padding: 6px 14px;
-            border-radius: 40px;
+        .bank-card .info .id-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
             color: #fff;
-            font-size: 0.7rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: 0.2s;
+            font-weight: 500;
+            letter-spacing: 0.3px;
         }
-        .graph-btn.active { background: #5865F2; }
+        .bank-card .info .code-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #f0b232;
+            letter-spacing: 0.5px;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 2px 12px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-top: 2px;
+            transition: all 0.3s ease;
+        }
+        .bank-card .info .code-value.hidden {
+            filter: blur(8px);
+            background: rgba(0, 0, 0, 0.5);
+            user-select: none;
+            pointer-events: none;
+        }
+        .bank-card .card-chip {
+            position: absolute;
+            top: 88px;
+            right: 26px;
+            width: 44px;
+            height: 34px;
+            background: radial-gradient(circle at 30% 30%, #f5d742, #c9a82a);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+            z-index: 2;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .bank-card .card-chip::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent 60%);
+        }
 
-        /* MODAL GENÉRICO */
+        .card-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 4px;
+        }
+        .card-actions .btn {
+            font-size: 0.75rem;
+            padding: 6px 20px;
+        }
+
+        /* toggle switch */
+        .toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: #b5b7bb;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        .toggle-wrap:hover {
+            color: #fff;
+        }
+        .toggle-switch {
+            width: 40px;
+            height: 22px;
+            background: #3b3d43;
+            border-radius: 40px;
+            position: relative;
+            transition: 0.3s ease;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .toggle-switch.active {
+            background: #5865f2;
+        }
+        .toggle-switch .knob {
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: 0.3s ease;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        .toggle-switch.active .knob {
+            left: 20px;
+        }
+
+        /* ----- Modals ----- */
         .modal-overlay {
             display: none;
             position: fixed;
-            top:0;left:0;width:100%;height:100%;
-            background: rgba(0,0,0,0.9);
-            backdrop-filter: blur(8px);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
             justify-content: center;
             align-items: center;
             z-index: 2000;
+            padding: 1.5rem;
         }
         .modal-card {
-            background: #2f3136;
-            border-radius: 1.5rem;
-            max-width: 460px;
-            width: 90%;
-            border: 1px solid #404249;
-            max-height: 85vh;
+            background: #2b2d31;
+            border-radius: 2.2rem;
+            max-width: 540px;
+            width: 100%;
+            border: 1px solid #3b3d43;
+            max-height: 90vh;
             overflow-y: auto;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+            animation: modalFadeIn 0.3s ease;
+        }
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.94) translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
         }
         .modal-header {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #404249;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #3b3d43;
             font-weight: 700;
-            color: #FBBF24;
-            display: flex;
-            justify-content: space-between;
-            background: #202225;
-        }
-        .modal-body { padding: 1.5rem; }
-        .modal-body .btn { margin-top: 0.5rem; width: 100%; }
-
-        .backup-item {
+            color: #f0b232;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #1e1f24;
-            border-radius: 60px;
-            padding: 6px 12px;
-            margin-bottom: 8px;
+            background: #1e1f22;
+            border-radius: 2.2rem 2.2rem 0 0;
         }
-        .backup-code {
-            font-family: monospace;
-            font-size: 0.7rem;
-            word-break: break-all;
+        .modal-header .close-btn {
+            background: none;
+            border: none;
+            color: #f0b232;
+            font-size: 1.8rem;
+            cursor: pointer;
+            transition: 0.25s ease;
+            line-height: 1;
+            padding: 0 6px;
         }
-        .tx-check-result {
-            background: #202225;
-            border-radius: 20px;
-            padding: 1rem;
-            margin-top: 1rem;
+        .modal-header .close-btn:hover {
+            transform: rotate(90deg) scale(1.1);
         }
-        .toast {
+        .modal-body {
+            padding: 2rem;
+        }
+
+        /* ----- Toast Notification ----- */
+        .toast-container {
             position: fixed;
-            top: 20px;
+            top: 24px;
             left: 50%;
             transform: translateX(-50%);
-            background: #2c2f36;
-            backdrop-filter: blur(12px);
-            color: #FBBF24;
-            padding: 10px 22px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+            width: 90%;
+            max-width: 500px;
+        }
+        .toast {
+            background: #1e1f22;
+            backdrop-filter: blur(16px);
+            color: #f0b232;
+            padding: 12px 28px;
             border-radius: 60px;
             font-weight: 600;
-            font-size: 0.8rem;
-            z-index: 2100;
-            display: none;
-            white-space: nowrap;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            border-left: 4px solid #43b581;
+            font-size: 0.9rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border-left: 5px solid #43b581;
+            animation: toastSlide 0.4s ease forwards;
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            justify-content: center;
+            border: 1px solid #3b3d43;
         }
-        .toast.error { border-left-color: #ed4245; color: #ed4245; }
-        footer {
-            text-align: center;
-            padding: 0.6rem;
-            font-size: 0.65rem;
-            color: #72767d;
-            border-top: 1px solid #404249;
-            background: #2f3136;
+        .toast.error {
+            border-left-color: #ed4245;
+            color: #ed4245;
         }
-        footer a { color: #FBBF24; text-decoration: none; }
+        .toast.warning {
+            border-left-color: #faa61a;
+            color: #faa61a;
+        }
+        @keyframes toastSlide {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.92);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        .toast-exit {
+            animation: toastExit 0.3s ease forwards;
+        }
+        @keyframes toastExit {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.92);
+            }
+        }
 
-        /* CREDENTIALS CACHE */
+        /* ----- Loading Overlay ----- */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 2500;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #3b3d43;
+            border-top-color: #f0b232;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .loading-text {
+            color: #b5b7bb;
+            font-size: 0.9rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        /* ----- Credentials History ----- */
         .credentials-list {
             margin-top: 1rem;
             max-height: 200px;
             overflow-y: auto;
-            border-top: 1px solid #404249;
+            border-top: 1px solid #3b3d43;
             padding-top: 0.8rem;
         }
         .cred-card {
-            background: #202225;
+            background: #121316;
             border-radius: 20px;
-            padding: 0.6rem;
+            padding: 0.6rem 1rem;
             margin-bottom: 0.6rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 8px;
+            border: 1px solid #3b3d43;
+            transition: border-color 0.2s;
+        }
+        .cred-card:hover {
+            border-color: #5865f2;
         }
         .cred-info {
             font-size: 0.7rem;
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
+            color: #d5d7db;
+        }
+        .cred-info .cred-user {
+            color: #f0b232;
         }
 
-        @media (max-width: 700px) {
-            body { padding: 0.5rem; }
-            .bank-container { max-height: 98vh; }
-            .bank-header { flex-direction: column; align-items: stretch; }
-            .balance-card { flex-direction: column; align-items: stretch; margin: 0.8rem 1rem; }
-            .tabs-nav { padding: 0.5rem; gap: 0.3rem; }
-            .tab-btn { padding: 0.5rem 0.9rem; font-size: 0.75rem; }
-            .dynamic-content { padding: 0.8rem; }
+        /* ----- Backup Items ----- */
+        .backup-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #121316;
+            border-radius: 60px;
+            padding: 6px 18px 6px 22px;
+            margin-bottom: 8px;
+            border: 1px solid #3b3d43;
+            transition: border-color 0.2s;
+        }
+        .backup-item:hover {
+            border-color: #5865f2;
+        }
+        .backup-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+            color: #b5b7bb;
+        }
+
+        /* ----- Check Result ----- */
+        .tx-check-result {
+            background: #121316;
+            border-radius: 22px;
+            padding: 1.2rem 1.6rem;
+            margin-top: 1rem;
+            border: 1px solid #3b3d43;
+            transition: border-color 0.2s;
+        }
+        .tx-check-result:hover {
+            border-color: #5865f2;
+        }
+
+        /* ----- Footer ----- */
+        footer {
+            text-align: center;
+            padding: 0.7rem 1rem;
+            font-size: 0.65rem;
+            color: #72767d;
+            border-top: 1px solid #3b3d43;
+            background: #2b2d31;
+            flex-shrink: 0;
+        }
+        footer a {
+            color: #f0b232;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        footer a:hover {
+            color: #f5c542;
+            text-decoration: underline;
+        }
+
+        /* ----- Responsive ----- */
+        @media (max-width: 768px) {
+            body {
+                padding: 0.8rem;
+            }
+            .bank-container {
+                max-height: 98vh;
+                border-radius: 1.8rem;
+            }
+            .bank-header {
+                padding: 0.6rem 1.2rem;
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .balance-card {
+                flex-direction: column;
+                align-items: stretch;
+                margin: 0.6rem 1rem;
+                padding: 0.8rem 1.2rem;
+            }
+            .tabs-nav {
+                padding: 0.4rem 0.8rem;
+                gap: 0.2rem;
+            }
+            .tab-btn {
+                padding: 0.4rem 0.9rem;
+                font-size: 0.7rem;
+            }
+            .dynamic-content {
+                padding: 0.8rem 1rem;
+            }
+            .modal-card {
+                max-width: 95%;
+            }
+            .bank-card {
+                height: 170px;
+            }
+            .bank-card .info .code-value {
+                font-size: 1rem;
+            }
+            .bank-card .card-chip {
+                width: 36px;
+                height: 28px;
+                top: 76px;
+                right: 18px;
+            }
+            .bank-card .magstripe {
+                top: 26px;
+                height: 28px;
+            }
         }
         @media (max-width: 480px) {
-            .toast { white-space: normal; text-align: center; width: 90%; font-size: 0.7rem; }
+            .toast {
+                font-size: 0.75rem;
+                padding: 10px 16px;
+            }
+            .balance-value {
+                font-size: 1.2rem;
+            }
+            .bank-container {
+                border-radius: 1.4rem;
+            }
+            .card-modern {
+                padding: 1rem;
+            }
+            .bank-card {
+                height: 150px;
+            }
+            .bank-card .info {
+                font-size: 12px;
+                bottom: 16px;
+                left: 18px;
+            }
+            .bank-card .info .code-value {
+                font-size: 0.9rem;
+                padding: 1px 10px;
+            }
+            .bank-card .card-chip {
+                width: 30px;
+                height: 24px;
+                top: 64px;
+                right: 14px;
+            }
+            .bank-card .magstripe {
+                top: 20px;
+                height: 24px;
+            }
+        }
+
+        /* Scrollbar global */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2b2d31;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3b3d43;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5865f2;
         }
     </style>
 </head>
 <body>
-<div class="bank-container">
-    <div class="bank-header">
-        <div class="logo">
-            <span class="logo-icon">💰</span>
-            <span class="logo-text">Coin Bank</span>
-        </div>
-        <div class="header-actions">
-            <div class="user-name-header">👤 User: <span id="headerUsername">Loading...</span></div>
-            <div class="avatar-btn" id="openSettingsModalBtn">⚙️</div>
-        </div>
-    </div>
 
-    <div class="balance-card">
-        <div class="balance-label">💰 Current Balance</div>
-        <div class="balance-value" id="headerBalance">0.00000000 coins</div>
-        <div class="user-id-row">
-            <span id="headerUserId">---</span>
-            <button class="copy-btn-sm" id="copyUserIdHeaderBtn">Copy ID</button>
-        </div>
-    </div>
-
-    <div class="tabs-nav" id="tabsContainer">
-        <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
-        <button class="tab-btn" data-tab="transactions">📜 Transactions</button>
-        <button class="tab-btn" data-tab="card">💳 Card</button>
-        <button class="tab-btn" data-tab="bills">📄 Bills</button>
-        <button class="tab-btn" data-tab="transfer">🔄 Transfer</button>
-        <button class="tab-btn" data-tab="check">🔍 Check</button>
-        <button class="tab-btn" data-tab="claim">🎁 Claim</button>
-    </div>
-
-    <div class="dynamic-content" id="dynamicContent">
-        <div class="card-modern" style="text-align:center;">Loading dashboard...</div>
-    </div>
-
-    <footer>
-        <a href="/terms" target="_blank">📜 Terms of Use</a> &nbsp;|&nbsp;
-        <a href="/terms/privacy.html" target="_blank">🔒 Privacy</a> &nbsp;|&nbsp;
-        <a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" target="_blank">🤖 Discord Bot</a> &nbsp;|&nbsp;
-        <span>© Coin System 2025</span>
-    </footer>
-</div>
-
-<!-- MODAL CONFIRMAÇÃO GENÉRICO -->
-<div id="confirmModal" class="modal-overlay">
-    <div class="modal-card">
-        <div class="modal-header"><span id="confirmTitle">Confirm</span><button style="background:none; border:none; color:#FBBF24; font-size:1.5rem; cursor:pointer;" onclick="closeConfirmModal()">✕</button></div>
-        <div class="modal-body">
-            <p id="confirmMessage" style="margin-bottom: 1.5rem;"></p>
-            <div style="display:flex; gap: 1rem; justify-content: flex-end;">
-                <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
-                <button class="btn btn-danger" id="confirmOkBtn">Confirm</button>
+    <!-- MAIN CONTAINER -->
+    <div class="bank-container">
+        <!-- HEADER -->
+        <div class="bank-header">
+            <div class="logo">
+                <span class="logo-icon">💰</span>
+                <span class="logo-text">Coin Bank</span>
+            </div>
+            <div class="header-actions">
+                <div class="user-name-header">👤 <span id="headerUsername">Loading...</span></div>
+                <button class="avatar-btn" id="openSettingsModalBtn" title="Settings &amp; Backup">⚙️</button>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- MODAL BILLS (toPay e toReceive separados) -->
-<div id="billsModal" class="modal-overlay">
-    <div class="modal-card">
-        <div class="modal-header"><span id="billsModalTitle">Bills</span><button style="background:none; border:none; color:#FBBF24; font-size:1.5rem; cursor:pointer;" onclick="closeBillsModal()">✕</button></div>
-        <div class="modal-body" id="billsModalBody"></div>
-    </div>
-</div>
-
-<!-- SETTINGS MODAL -->
-<div id="settingsModal" class="modal-overlay">
-    <div class="modal-card">
-        <div class="modal-header"><span>⚙️ Account & Backup</span><button style="background:none; border:none; color:#FBBF24; font-size:1.5rem; cursor:pointer;" onclick="closeSettingsModal()">✕</button></div>
-        <div class="modal-body">
-            <h4>🔐 Change Credentials</h4>
-            <input type="text" id="newUsername" placeholder="New username (optional)">
-            <input type="password" id="newPassword" placeholder="New password">
-            <input type="password" id="confirmNewPassword" placeholder="Confirm password">
-            <button class="btn btn-primary" id="doChangeCredsBtn" style="margin-bottom:16px;">Change</button>
-            <hr style="margin:12px 0; border-color:#404249;">
-            <h4>💾 Backup Codes</h4>
-            <div id="backupListContainer" style="max-height:160px; overflow-y:auto; margin-bottom:12px;"></div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <input type="text" id="restoreBackupCode" placeholder="Code to restore" style="flex:1;">
-                <button class="btn btn-secondary" id="doRestoreBackupBtn">Restore</button>
-                <button class="btn btn-primary" id="doCreateBackupBtn">Create</button>
+        <!-- BALANCE CARD -->
+        <div class="balance-card">
+            <div>
+                <div class="balance-label">💰 Current Balance</div>
+                <div class="balance-value" id="headerBalance">0.00000000 coins</div>
             </div>
-            <hr style="margin:16px 0;">
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn btn-danger" id="doUnregisterBtn">🗑️ Delete Account</button>
-                <button class="btn btn-secondary" id="doLogoutBtn">🚪 Logout</button>
+            <div class="user-id-row">
+                <span id="headerUserId">---</span>
+                <button class="copy-btn-sm" id="copyUserIdHeaderBtn">Copy ID</button>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- LOGIN / REGISTER MODAL -->
-<div id="loginRegisterOverlay" style="display:flex; position:fixed; inset:0; background:#36393f; z-index:2000; justify-content:center; align-items:center;">
-    <div class="modal-card" style="max-width:420px;">
-        <div class="modal-header"><span id="authModalTitle">🔐 Access Account</span></div>
-        <div class="modal-body">
-            <div id="loginForm">
-                <input type="text" id="loginUsername" placeholder="Username">
-                <input type="password" id="loginPassword" placeholder="Password">
-                <button class="btn btn-primary" id="loginSubmitBtn" style="margin-bottom:8px;">Login</button>
-                <button class="btn btn-secondary" id="switchToRegisterBtn">Create Account</button>
-                
-                <!-- Histórico de credenciais -->
-                <div id="credentialsHistory" class="credentials-list">
-                    <div style="font-size:0.7rem; color:#b9bbbe; margin-bottom:6px;">📁 Previous logins</div>
-                    <div id="credentialsListContainer"></div>
+        <!-- TABS -->
+        <div class="tabs-nav" id="tabsContainer">
+            <button class="tab-btn active" data-tab="transactions">📜 Transactions</button>
+            <button class="tab-btn" data-tab="card">💳 Card</button>
+            <button class="tab-btn" data-tab="bills">📄 Bills</button>
+            <button class="tab-btn" data-tab="transfer">🔄 Transfer</button>
+            <button class="tab-btn" data-tab="claim">🎁 Claim</button>
+        </div>
+
+        <!-- DYNAMIC CONTENT -->
+        <div class="dynamic-content" id="dynamicContent">
+            <div class="card-modern" style="text-align:center;">Loading...</div>
+        </div>
+
+        <!-- FOOTER -->
+        <footer>
+            <a href="/terms" target="_blank">📜 Terms of Use</a> &nbsp;|&nbsp;
+            <a href="/terms/privacy.html" target="_blank">🔒 Privacy</a> &nbsp;|&nbsp;
+            <a href="https://discord.com/oauth2/authorize?client_id=1391067775077978214" target="_blank">🤖 Discord Bot</a> &nbsp;|&nbsp;
+            <span>© Coin System 2025</span>
+        </footer>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- LOADING OVERLAY -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading...</div>
+    </div>
+
+    <!-- CONFIRM MODAL -->
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span id="confirmTitle">Confirm</span>
+                <button class="close-btn" onclick="closeConfirmModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" style="margin-bottom: 1.5rem;"></p>
+                <div style="display:flex; gap: 1rem; justify-content: flex-end;">
+                    <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+                    <button class="btn btn-danger" id="confirmOkBtn">Confirm</button>
                 </div>
             </div>
-            <div id="registerForm" style="display:none;">
-                <input type="text" id="regUsername" placeholder="Username">
-                <input type="password" id="regPassword" placeholder="Password">
-                <input type="password" id="regConfirm" placeholder="Confirm password">
-                <button class="btn btn-primary" id="registerSubmitBtn">Register</button>
-                <button class="btn btn-secondary" id="switchToLoginBtn" style="margin-top:12px;">Back to Login</button>
+        </div>
+    </div>
+
+    <!-- BILLS MODAL (toPay / toReceive) -->
+    <div id="billsModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span id="billsModalTitle">Bills</span>
+                <button class="close-btn" onclick="closeBillsModal()">✕</button>
+            </div>
+            <div class="modal-body" id="billsModalBody"></div>
+        </div>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>⚙️ Account &amp; Backup</span>
+                <button class="close-btn" onclick="closeSettingsModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <h4>🔐 Change Credentials</h4>
+                <input type="text" id="newUsername" placeholder="New username (optional)">
+                <input type="password" id="newPassword" placeholder="New password">
+                <input type="password" id="confirmNewPassword" placeholder="Confirm password">
+                <button class="btn btn-primary" id="doChangeCredsBtn" style="margin-bottom:16px;">Change</button>
+                <hr style="margin:12px 0; border-color:#3b3d43;">
+
+                <h4>💾 Backup Codes</h4>
+                <div id="backupListContainer" style="max-height:160px; overflow-y:auto; margin-bottom:12px;"></div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <input type="text" id="restoreBackupCode" placeholder="Code to restore" style="flex:1;">
+                    <button class="btn btn-secondary" id="doRestoreBackupBtn">Restore</button>
+                    <button class="btn btn-success" id="doCreateBackupBtn">Create</button>
+                </div>
+                <hr style="margin:16px 0;">
+
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn btn-danger" id="doUnregisterBtn">🗑️ Delete Account</button>
+                    <button class="btn btn-secondary" id="doLogoutBtn">🚪 Logout</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<div id="toastMsg" class="toast"></div>
+    <!-- LOGIN / REGISTER OVERLAY -->
+    <div id="loginRegisterOverlay" style="display:flex; position:fixed; inset:0; background:#1a1b1e; z-index:2000; justify-content:center; align-items:center; padding:1.5rem;">
+        <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header"><span id="authModalTitle">🔐 Access Account</span></div>
+            <div class="modal-body">
+                <div id="loginForm">
+                    <input type="text" id="loginUsername" placeholder="Username">
+                    <input type="password" id="loginPassword" placeholder="Password">
+                    <button class="btn btn-primary" id="loginSubmitBtn" style="margin-bottom:8px; width:100%;">Login</button>
+                    <button class="btn btn-secondary" id="switchToRegisterBtn" style="width:100%;">Create Account</button>
 
-<script>
-    const API = window.location.origin;
-    let session = null;
-    let chartInstance = null;
-    let currentGraphRange = '24h';
-    let allTransactionsCache = [];
-    let pendingConfirm = null;
+                    <div id="credentialsHistory" class="credentials-list">
+                        <div style="font-size:0.7rem; color:#b5b7bb; margin-bottom:6px;">📁 Previous logins</div>
+                        <div id="credentialsListContainer"></div>
+                    </div>
+                </div>
+                <div id="registerForm" style="display:none;">
+                    <input type="text" id="regUsername" placeholder="Username">
+                    <input type="password" id="regPassword" placeholder="Password">
+                    <input type="password" id="regConfirm" placeholder="Confirm password">
+                    <button class="btn btn-primary" id="registerSubmitBtn" style="width:100%;">Register</button>
+                    <button class="btn btn-secondary" id="switchToLoginBtn" style="margin-top:12px; width:100%;">Back to Login</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    // Helper: copy robusto sem alert
-    async function copyText(text) {
-        try {
-            await navigator.clipboard.writeText(String(text));
-            showToast('✅ Copied!');
-        } catch(e) {
-            // fallback
-            const textarea = document.createElement('textarea');
-            textarea.value = String(text);
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showToast('✅ Copied!');
+    <script>
+        // ============================================================
+        //  STATE
+        // ============================================================
+        const state = {
+            session: null,
+            transactionsCache: [],
+            claimInterval: null,
+            claimRemaining: 0,
+            cardCodeHidden: false,
+        };
+
+        // ============================================================
+        //  HELPERS
+        // ============================================================
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]);
         }
-    }
 
-    function showToast(msg, isError=false) {
-        const toast = document.getElementById('toastMsg');
-        toast.innerText = msg;
-        toast.style.display = 'block';
-        toast.className = `toast ${isError ? 'error' : ''}`;
-        setTimeout(() => toast.style.display = 'none', 3500);
-    }
+        function formatCoins(val) {
+            return parseFloat(val).toFixed(8);
+        }
 
-    function showConfirm({ title, message, onConfirm }) {
-        document.getElementById('confirmTitle').innerText = title;
-        document.getElementById('confirmMessage').innerText = message;
-        document.getElementById('confirmModal').style.display = 'flex';
-        const okBtn = document.getElementById('confirmOkBtn');
-        const cancelBtn = document.getElementById('confirmCancelBtn');
-        const closeHandler = () => {
+        function authHeaders() {
+            if (!state.session) return {};
+            return {
+                Authorization: "Bearer " + state.session.sessionId,
+                "Content-Type": "application/json"
+            };
+        }
+
+        function getApiBase() {
+            return window.location.origin;
+        }
+
+        // ----- Toast -----
+        function showToast(message, type = 'info', duration = 3500) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type === 'error' ? 'error' : type === 'warning' ? 'warning' : ''}`;
+            const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
+            toast.innerHTML = `${icon} ${escapeHtml(message)}`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        // ----- Loading -----
+        function showLoading(text = 'Loading...') {
+            const overlay = document.getElementById('loadingOverlay');
+            document.querySelector('.loading-text').textContent = text;
+            overlay.classList.add('active');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+
+        // ----- API Request with loading & error handling -----
+        async function apiRequest(url, options = {}, showLoader = true) {
+            if (showLoader) showLoading();
+            try {
+                const res = await fetch(url, options);
+                if (!res.ok) {
+                    let errMsg = `Request failed (${res.status})`;
+                    try {
+                        const data = await res.json();
+                        if (data.error) errMsg = data.error;
+                        else if (data.message) errMsg = data.message;
+                    } catch (_) {}
+                    throw new Error(errMsg);
+                }
+                const data = await res.json();
+                return data;
+            } catch (err) {
+                showToast(err.message || 'Network error', 'error');
+                throw err;
+            } finally {
+                if (showLoader) hideLoading();
+            }
+        }
+
+        // ----- Copy -----
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(String(text));
+                showToast('✅ Copied!');
+            } catch (_) {
+                const ta = document.createElement('textarea');
+                ta.value = String(text);
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('✅ Copied!');
+            }
+        }
+
+        // ----- Modal controls -----
+        function closeConfirmModal() {
             document.getElementById('confirmModal').style.display = 'none';
-            okBtn.removeEventListener('click', confirmHandler);
-            cancelBtn.removeEventListener('click', closeHandler);
-        };
-        const confirmHandler = () => {
-            closeHandler();
-            onConfirm();
-        };
-        okBtn.addEventListener('click', confirmHandler);
-        cancelBtn.addEventListener('click', closeHandler);
-    }
-
-    function closeConfirmModal() { document.getElementById('confirmModal').style.display = 'none'; }
-    function closeBillsModal() { document.getElementById('billsModal').style.display = 'none'; }
-
-    function authHeaders() {
-        return { Authorization: "Bearer " + session.sessionId, "Content-Type": "application/json" };
-    }
-
-    async function refreshBalanceUI() {
-        if(!session) return;
-        try {
-            const res = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
-            if(res.ok) {
-                const { coins } = await res.json();
-                document.getElementById("headerBalance").innerText = parseFloat(coins).toFixed(8) + " coins";
-            }
-        } catch(e) {}
-    }
-
-    // ---- GRAPHICS (mesmo código anterior) ----
-    async function fetchAllTransactions() {
-        let page = 1, all = [];
-        while(true) {
-            const res = await fetch(`${API}/api/transactions?page=${page}`, { headers: authHeaders() });
-            if(!res.ok) break;
-            const data = await res.json();
-            const txs = data.transactions || [];
-            if(txs.length === 0) break;
-            all.push(...txs);
-            page++;
         }
-        return all;
-    }
 
-    async function getGraphData(range) { /* ... mantido ... */ 
-        if(!session) return null;
-        try {
-            const balanceRes = await fetch(`${API}/api/user/${session.userId}/balance`, { headers: authHeaders() });
-            const { coins: currentCoins } = await balanceRes.json();
-            let currentBalance = parseFloat(currentCoins);
-            let transactions = allTransactionsCache.length ? allTransactionsCache : await fetchAllTransactions();
-            allTransactionsCache = transactions;
-            if(transactions.length === 0) return { labels: [new Date().toLocaleTimeString()], values: [currentBalance] };
-            transactions.sort((a,b) => new Date(a.date) - new Date(b.date));
-            let net = 0;
-            for(const tx of transactions) {
-                if(tx.from_id === session.userId) net -= parseFloat(tx.amount);
-                if(tx.to_id === session.userId) net += parseFloat(tx.amount);
-            }
-            let historical = currentBalance - net;
-            let dailyMap = new Map();
-            let cur = historical;
-            for(const tx of transactions) {
-                const amt = parseFloat(tx.amount);
-                if(tx.from_id === session.userId) cur -= amt;
-                if(tx.to_id === session.userId) cur += amt;
-                const d = new Date(tx.date).toISOString().slice(0,10);
-                dailyMap.set(d, cur);
-            }
-            const today = new Date().toISOString().slice(0,10);
-            dailyMap.set(today, currentBalance);
-            const now = new Date();
-            const labels = [], values = [];
-            if(range === '24h') {
-                for(let i=23; i>=0; i--) {
-                    const h = new Date(now);
-                    h.setHours(now.getHours() - i, 0,0,0);
-                    labels.push(h.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
-                    let foundVal = currentBalance;
-                    for(let j=transactions.length-1; j>=0; j--) {
-                        const txDate = new Date(transactions[j].date);
-                        if(txDate <= h) { 
-                            let bal = currentBalance;
-                            for(let k=j; k<transactions.length; k++) {
-                                if(transactions[k].from_id === session.userId) bal -= parseFloat(transactions[k].amount);
-                                if(transactions[k].to_id === session.userId) bal += parseFloat(transactions[k].amount);
-                            }
-                            foundVal = bal; break;
-                        }
-                    }
-                    values.unshift(foundVal);
-                }
-                return { labels, values };
-            } else {
-                let days = range === '7d' ? 7 : (range === '15d' ? 15 : 30);
-                for(let i=days-1; i>=0; i--) {
-                    const d = new Date(now);
-                    d.setDate(now.getDate() - i);
-                    const key = d.toISOString().slice(0,10);
-                    labels.push(key.slice(5));
-                    let val = dailyMap.get(key);
-                    if(val === undefined) {
-                        let found = null;
-                        for(let j=i-1; j>=0; j--) {
-                            const prevD = new Date(now);
-                            prevD.setDate(now.getDate() - j);
-                            const prevKey = prevD.toISOString().slice(0,10);
-                            if(dailyMap.has(prevKey)) { found = dailyMap.get(prevKey); break; }
-                        }
-                        val = found !== null ? found : (values.length ? values[values.length-1] : currentBalance);
-                    }
-                    values.push(val);
-                }
-                return { labels, values };
-            }
-        } catch(e) { console.error(e); return null; }
-    }
-
-    async function renderDashboard() {
-        const container = document.getElementById('dynamicContent');
-        container.innerHTML = `<div class="card-modern"><div class="graph-container"><canvas id="balanceChart" width="800" height="280"></canvas></div>
-            <div class="graph-buttons">
-                <button class="graph-btn ${currentGraphRange === '24h' ? 'active' : ''}" data-range="24h">24h</button>
-                <button class="graph-btn ${currentGraphRange === '7d' ? 'active' : ''}" data-range="7d">7d</button>
-                <button class="graph-btn ${currentGraphRange === '15d' ? 'active' : ''}" data-range="15d">15d</button>
-                <button class="graph-btn ${currentGraphRange === '30d' ? 'active' : ''}" data-range="30d">30d</button>
-            </div></div>`;
-        const data = await getGraphData(currentGraphRange);
-        if(data && data.labels.length) {
-            const ctx = document.getElementById('balanceChart').getContext('2d');
-            if(chartInstance) chartInstance.destroy();
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: { labels: data.labels, datasets: [{ label: 'Balance (coins)', data: data.values, borderColor: '#5865F2', backgroundColor: 'rgba(88,101,242,0.2)', fill: true, tension: 0.3, pointRadius: 2 }] },
-                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { labels: { color: '#fff' } }, tooltip: { callbacks: { label: (ctx) => `💰 ${ctx.raw.toFixed(8)} coins` } } },
-                scales: { y: { ticks: { color: '#b9bbbe', callback: (v) => v.toFixed(4) }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                           x: { ticks: { color: '#b9bbbe', maxRotation: 45, autoSkip: true }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
-            });
+        function closeBillsModal() {
+            document.getElementById('billsModal').style.display = 'none';
         }
-        document.querySelectorAll('.graph-btn').forEach(btn => {
-            btn.onclick = async () => {
-                currentGraphRange = btn.dataset.range;
-                await renderDashboard();
-                document.querySelectorAll('.graph-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').style.display = 'none';
+        }
+
+        function showConfirm({ title, message, onConfirm }) {
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmMessage').innerText = message;
+            document.getElementById('confirmModal').style.display = 'flex';
+            const okBtn = document.getElementById('confirmOkBtn');
+            const cancelBtn = document.getElementById('confirmCancelBtn');
+            const cleanup = () => {
+                document.getElementById('confirmModal').style.display = 'none';
+                okBtn.removeEventListener('click', handler);
+                cancelBtn.removeEventListener('click', cleanup);
             };
-        });
-    }
+            const handler = () => {
+                cleanup();
+                onConfirm();
+            };
+            okBtn.addEventListener('click', handler);
+            cancelBtn.addEventListener('click', cleanup);
+        }
 
-    // ---- Funções de módulo (transactions, card, bills, transfer, check, claim) ----
-    async function loadTransactions() {
-        const container = document.getElementById('dynamicContent');
-        container.innerHTML = `<div class="card-modern">📜 Loading transactions...</div>`;
-        const res = await fetch(`${API}/api/transactions?page=1`, { headers: authHeaders() });
-        if(!res.ok) { container.innerHTML = `<div class="card-modern">Error</div>`; return; }
-        const { transactions } = await res.json();
-        if(!transactions.length) { container.innerHTML = `<div class="card-modern">No transactions.</div>`; return; }
-        let html = `<div class="card-modern"><h3>📋 Latest transactions</h3>`;
-        for(const t of transactions) {
-            html += `<div class="tx-item">
-                        <div class="tx-info">📅 ${new Date(t.date).toLocaleString()}<br>🧾 From: ${t.from_id}<br>➡️ To: ${t.to_id}<br>💰 ${parseFloat(t.amount).toFixed(8)} coins<br>🆔 ${t.id}</div>
-                        <div style="display:flex; gap:6px;">
-                            <button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
-                            <button class="icon-btn" onclick="downloadReceipt('${t.id}')">⬇️ Receipt</button>
+        // ============================================================
+        //  AUTH / SESSION
+        // ============================================================
+        function saveCredential(username, password, userId) {
+            let creds = JSON.parse(localStorage.getItem('coinbank_creds') || '[]');
+            creds = creds.filter(c => c.userId !== userId);
+            creds.unshift({ username, password, userId, lastUsed: Date.now() });
+            if (creds.length > 10) creds.pop();
+            localStorage.setItem('coinbank_creds', JSON.stringify(creds));
+            renderCredentialsList();
+        }
+
+        function renderCredentialsList() {
+            const container = document.getElementById('credentialsListContainer');
+            if (!container) return;
+            const creds = JSON.parse(localStorage.getItem('coinbank_creds') || '[]');
+            if (!creds.length) {
+                container.innerHTML = '<div style="color:#72767d; text-align:center;">No saved accounts</div>';
+                return;
+            }
+            container.innerHTML = creds.map(c => `
+                    <div class="cred-card">
+                        <div class="cred-info">
+                            <span class="cred-user">👤 ${escapeHtml(c.username)}</span><br>
+                            🆔 ${c.userId}
                         </div>
-                    </div>`;
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button class="copy-btn" onclick="copyText('${c.userId}')">Copy ID</button>
+                            <button class="icon-btn" onclick="downloadUserCreds('${c.userId}','${escapeHtml(c.username)}')">⬇️</button>
+                            <button class="btn btn-primary" style="padding:2px 12px; font-size:0.65rem;" onclick="quickLogin('${escapeHtml(c.username)}','${c.password}')">Login</button>
+                        </div>
+                    </div>
+                `).join('');
         }
-        html += `</div>`;
-        container.innerHTML = html;
-    }
 
-    async function downloadReceipt(txId) {
-        showToast("Generating receipt...");
-        try {
-            const res = await fetch(`${API}/api/tx/${txId}`, { headers: authHeaders() });
-            if(!res.ok) throw new Error("Transaction not found");
-            const data = await res.json();
-            if(!data.success) throw new Error("Invalid transaction");
-            const tx = data.tx;
-            const width = 1240, height = 1754;
-            const canvas = document.createElement('canvas');
-            canvas.width = width; canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, width, height);
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 48px Arial';
-            ctx.fillText('Transaction Receipt', 80, 120);
-            const dateObj = new Date(tx.date);
-            const formattedDate = `${String(dateObj.getDate()).padStart(2,'0')} / ${String(dateObj.getMonth()+1).padStart(2,'0')} / ${dateObj.getFullYear()} at ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}:${String(dateObj.getSeconds()).padStart(2,'0')}`;
-            ctx.font = '26px Arial';
-            ctx.fillStyle = '#444';
-            ctx.fillText(`Date: ${formattedDate}`, 80, 180);
-            ctx.font = '22px monospace';
-            ctx.fillStyle = '#000';
-            ctx.fillText(`TX ID: ${txId}`, 80, 230);
-            ctx.strokeStyle = '#ddd';
-            ctx.beginPath(); ctx.moveTo(80, 270); ctx.lineTo(width-80, 270); ctx.stroke();
-            ctx.font = 'bold 30px Arial';
-            ctx.fillText('From:', 80, 340);
-            ctx.font = '26px Arial';
-            ctx.fillText(`${tx.from} (${tx.from})`, 80, 390);
-            ctx.font = 'bold 30px Arial';
-            ctx.fillText('To:', 80, 460);
-            ctx.font = '26px Arial';
-            ctx.fillText(`${tx.to} (${tx.to})`, 80, 510);
-            ctx.fillStyle = '#16a34a';
-            ctx.font = 'bold 40px Arial';
-            ctx.fillText(`Amount: ${tx.amountCoins} coins`, 80, 620);
-            try {
-                const icon = new Image();
-                icon.src = '/favicon.ico';
-                await new Promise((resolve) => { icon.onload = resolve; icon.onerror = resolve; });
-                ctx.drawImage(icon, width-260, 40, 180, 180);
-            } catch(e) {}
-            try {
-                const qrDataUrl = await QRCode.toDataURL(txId, { errorCorrectionLevel: 'H', margin: 1, width: 220 });
-                const qrImg = new Image();
-                qrImg.src = qrDataUrl;
-                await new Promise(resolve => { qrImg.onload = resolve; });
-                const qrX = (width - 220) / 2;
-                const qrY = height - 350;
-                ctx.drawImage(qrImg, qrX, qrY, 220, 220);
-                ctx.fillStyle = '#555';
-                ctx.font = '22px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Scan to verify transaction', width/2, qrY + 260);
-            } catch(e) {}
-            canvas.toBlob(blob => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${txId}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast("Receipt downloaded");
-            });
-        } catch(err) { showToast(err.message, true); }
-    }
+        window.quickLogin = async (username, password) => {
+            document.getElementById('loginUsername').value = username;
+            document.getElementById('loginPassword').value = password;
+            await performLogin();
+        };
 
-    async function downloadUserCreds(userId, username) {
-        showToast("Generating user card...");
-        try {
-            const width = 1240, height = 1754;
-            const canvas = document.createElement('canvas');
-            canvas.width = width; canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, width, height);
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 48px Arial';
-            ctx.fillText('User Credentials', 80, 120);
-            ctx.font = '26px Arial';
-            ctx.fillStyle = '#444';
-            ctx.fillText(`Username: ${username}`, 80, 200);
-            ctx.font = '22px monospace';
-            ctx.fillStyle = '#000';
-            ctx.fillText(`User ID: ${userId}`, 80, 260);
-            ctx.strokeStyle = '#ddd';
-            ctx.beginPath(); ctx.moveTo(80, 300); ctx.lineTo(width-80, 300); ctx.stroke();
+        async function performLogin() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!username || !password) {
+                showToast('Please fill in all fields', 'warning');
+                return;
+            }
             try {
-                const icon = new Image();
-                icon.src = '/favicon.ico';
-                await new Promise((resolve) => { icon.onload = resolve; icon.onerror = resolve; });
-                ctx.drawImage(icon, width-260, 40, 180, 180);
-            } catch(e) {}
-            canvas.toBlob(blob => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${userId}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showToast("User card downloaded");
-            });
-        } catch(err) { showToast("Error generating card", true); }
-    }
+                const data = await apiRequest(`${getApiBase()}/api/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                }, true);
 
-    async function loadCard() { /* mesmíssimo código anterior */ 
-        const container = document.getElementById('dynamicContent');
-        try {
-            const res = await fetch(`${API}/api/card`, { method:"POST", headers: authHeaders() });
-            if(!res.ok) throw new Error();
-            const { cardCode } = await res.json();
-            container.innerHTML = `<div class="card-modern" style="text-align:center;">
-                <div class="bank-card"><div class="magstripe"></div><div class="info"><p>💳 Holder: ${escapeHtml(session.userId)}</p><p>🔑 Card Code: <strong>${escapeHtml(cardCode)}</strong></p></div></div>
-                <div style="display:flex; gap:12px; justify-content:center; margin-top:12px;">
-                    <button class="copy-btn" id="copyCardBtn">Copy Card Code</button>
-                    <button class="btn btn-secondary" id="resetCardBtn">Reset Card</button>
-                </div>
-                <hr style="margin:20px 0;">
-                <h4>Create Bill</h4>
-                <input type="text" id="billAmount" placeholder="Amount (coins)">
-                <input type="text" id="billFromId" placeholder="Debtor ID (who pays)">
-                <button class="btn btn-primary" id="createBillBtn">Create Bill</button>
-            </div>`;
-            document.getElementById('copyCardBtn').onclick = () => copyText(cardCode);
-            document.getElementById('resetCardBtn').onclick = async () => { await fetch(`${API}/api/card/reset`, { method:"POST", headers: authHeaders() }); showToast("Card reset!"); loadCard(); };
-            document.getElementById('createBillBtn').onclick = async () => {
-                const amount = parseFloat(document.getElementById('billAmount').value);
-                const fromId = document.getElementById('billFromId').value.trim();
-                if(!amount || !fromId) return showToast("Fill fields", true);
-                const res = await fetch(`${API}/api/bill/create`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ fromId, toId: session.userId, amount }) });
-                if(res.ok) { showToast("Bill created!"); loadModule("bills"); } else showToast("Error", true);
+                if (data.sessionCreated && data.passwordCorrect) {
+                    state.session = {
+                        username,
+                        sessionId: data.sessionId,
+                        userId: data.userId
+                    };
+                    localStorage.setItem('session', JSON.stringify(state.session));
+                    saveCredential(username, password, data.userId);
+                    document.getElementById('loginRegisterOverlay').style.display = 'none';
+                    startApp();
+                } else {
+                    showToast('Invalid credentials', 'error');
+                }
+            } catch (err) {
+                showToast(err.message || 'Login failed', 'error');
+            }
+        }
+
+        async function performRegister() {
+            const username = document.getElementById('regUsername').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const confirm = document.getElementById('regConfirm').value;
+            if (!username || !password || !confirm) {
+                showToast('Please fill all fields', 'warning');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('Passwords do not match', 'error');
+                return;
+            }
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                }, true);
+                if (data.success) {
+                    showToast('Account created! Please login.');
+                    document.getElementById('switchToLoginBtn').click();
+                } else {
+                    showToast(data.error || 'Registration failed', 'error');
+                }
+            } catch (err) {
+                showToast(err.message || 'Registration error', 'error');
+            }
+        }
+
+        async function doLogout() {
+            try {
+                await apiRequest(`${getApiBase()}/api/logout`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, false);
+            } catch (_) {}
+            localStorage.removeItem('session');
+            state.session = null;
+            window.location.reload();
+        }
+
+        // ============================================================
+        //  DOWNLOAD RECEIPT / USER CARD
+        // ============================================================
+        window.downloadReceipt = async function(txId) {
+            showToast('Generating receipt...');
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/tx/${txId}`, {
+                    headers: authHeaders()
+                }, true);
+                if (!data.success) throw new Error('Transaction not found');
+                const tx = data.tx;
+                const width = 1240,
+                    height = 1754;
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 48px Inter, Arial, sans-serif';
+                ctx.fillText('Transaction Receipt', 80, 120);
+
+                const dateObj = new Date(tx.date);
+                const formattedDate =
+                    `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()} at ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}:${String(dateObj.getSeconds()).padStart(2,'0')}`;
+                ctx.font = '26px Inter, Arial, sans-serif';
+                ctx.fillStyle = '#444';
+                ctx.fillText(`Date: ${formattedDate}`, 80, 180);
+
+                ctx.font = '22px monospace';
+                ctx.fillStyle = '#000';
+                ctx.fillText(`TX ID: ${txId}`, 80, 230);
+
+                ctx.strokeStyle = '#ddd';
+                ctx.beginPath();
+                ctx.moveTo(80, 270);
+                ctx.lineTo(width - 80, 270);
+                ctx.stroke();
+
+                ctx.font = 'bold 30px Inter, Arial, sans-serif';
+                ctx.fillStyle = '#000';
+                ctx.fillText('From:', 80, 340);
+                ctx.font = '26px Inter, Arial, sans-serif';
+                ctx.fillText(`${tx.from} (${tx.from})`, 80, 390);
+
+                ctx.font = 'bold 30px Inter, Arial, sans-serif';
+                ctx.fillText('To:', 80, 460);
+                ctx.font = '26px Inter, Arial, sans-serif';
+                ctx.fillText(`${tx.to} (${tx.to})`, 80, 510);
+
+                ctx.fillStyle = '#16a34a';
+                ctx.font = 'bold 40px Inter, Arial, sans-serif';
+                ctx.fillText(`Amount: ${tx.amountCoins} coins`, 80, 620);
+
+                try {
+                    const icon = new Image();
+                    icon.src = '/favicon.ico';
+                    await new Promise((resolve) => { icon.onload = resolve;
+                        icon.onerror = resolve; });
+                    ctx.drawImage(icon, width - 260, 40, 180, 180);
+                } catch (_) {}
+
+                try {
+                    const qrDataUrl = await QRCode.toDataURL(txId, { errorCorrectionLevel: 'H', margin: 1, width: 220 });
+                    const qrImg = new Image();
+                    qrImg.src = qrDataUrl;
+                    await new Promise(resolve => { qrImg.onload = resolve; });
+                    const qrX = (width - 220) / 2;
+                    const qrY = height - 350;
+                    ctx.drawImage(qrImg, qrX, qrY, 220, 220);
+                    ctx.fillStyle = '#555';
+                    ctx.font = '22px Inter, Arial, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Scan to verify transaction', width / 2, qrY + 260);
+                } catch (_) {}
+
+                canvas.toBlob(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${txId}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('Receipt downloaded');
+                });
+            } catch (err) {
+                showToast(err.message || 'Error generating receipt', 'error');
+            }
+        };
+
+        window.downloadUserCreds = async function(userId, username) {
+            showToast('Generating user card...');
+            try {
+                const width = 1240,
+                    height = 1754;
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 48px Inter, Arial, sans-serif';
+                ctx.fillText('User Credentials', 80, 120);
+                ctx.font = '26px Inter, Arial, sans-serif';
+                ctx.fillStyle = '#444';
+                ctx.fillText(`Username: ${username}`, 80, 200);
+                ctx.font = '22px monospace';
+                ctx.fillStyle = '#000';
+                ctx.fillText(`User ID: ${userId}`, 80, 260);
+
+                try {
+                    const icon = new Image();
+                    icon.src = '/favicon.ico';
+                    await new Promise((resolve) => { icon.onload = resolve;
+                        icon.onerror = resolve; });
+                    ctx.drawImage(icon, width - 260, 40, 180, 180);
+                } catch (_) {}
+
+                canvas.toBlob(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${userId}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('User card downloaded');
+                });
+            } catch (err) {
+                showToast('Error generating card', 'error');
+            }
+        };
+
+        // ============================================================
+        //  REFRESH BALANCE
+        // ============================================================
+        async function refreshBalanceUI() {
+            if (!state.session) return;
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/user/${state.session.userId}/balance`, {
+                    headers: authHeaders()
+                }, false);
+                document.getElementById('headerBalance').innerText = formatCoins(data.coins) + ' coins';
+            } catch (_) {}
+        }
+
+        // ============================================================
+        //  MODULE LOADERS
+        // ============================================================
+
+        // ----- TRANSACTIONS (with Check built-in) -----
+        async function loadTransactions() {
+            const container = document.getElementById('dynamicContent');
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/transactions?page=1`, {
+                    headers: authHeaders()
+                }, true);
+                const txs = data.transactions || [];
+                state.transactionsCache = txs;
+
+                let html = `
+                        <div class="card-modern">
+                            <h3 style="margin-bottom:0.8rem;">🔍 Check Transaction</h3>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                                <input type="text" id="checkTxId" placeholder="Transaction ID" style="flex:1; margin-bottom:0;">
+                                <button class="btn btn-primary" id="doCheckTxBtn" style="flex-shrink:0;">Check</button>
+                            </div>
+                            <div id="checkResult" style="margin-top:0.8rem;"></div>
+                        </div>
+                        <div class="card-modern">
+                            <h3>📋 Latest Transactions</h3>
+                    `;
+
+                if (!txs.length) {
+                    html += `<p style="color:#b5b7bb;">No transactions yet.</p>`;
+                } else {
+                    for (const t of txs) {
+                        html += `
+                                <div class="tx-item">
+                                    <div class="tx-info">
+                                        📅 ${new Date(t.date).toLocaleString()}<br>
+                                        🧾 From: <strong>${escapeHtml(t.from_id)}</strong><br>
+                                        ➡️ To: <strong>${escapeHtml(t.to_id)}</strong><br>
+                                        💰 ${formatCoins(t.amount)} coins<br>
+                                        🆔 ${t.id}
+                                    </div>
+                                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                        <button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
+                                        <button class="icon-btn" onclick="downloadReceipt('${t.id}')">⬇️ Receipt</button>
+                                    </div>
+                                </div>
+                            `;
+                    }
+                }
+                html += `</div>`;
+                container.innerHTML = html;
+
+                document.getElementById('doCheckTxBtn').onclick = async () => {
+                    const txId = document.getElementById('checkTxId').value.trim();
+                    if (!txId) {
+                        showToast('Enter transaction ID', 'warning');
+                        return;
+                    }
+                    try {
+                        const result = await apiRequest(`${getApiBase()}/api/tx/${txId}`, {
+                            headers: authHeaders()
+                        }, true);
+                        if (!result.success) {
+                            document.getElementById('checkResult').innerHTML =
+                                `<div class="tx-check-result">❌ Invalid transaction</div>`;
+                            return;
+                        }
+                        const t = result.tx;
+                        document.getElementById('checkResult').innerHTML = `
+                                <div class="tx-check-result">
+                                    <strong>📄 Transaction Details</strong><br>
+                                    🆔 ID: ${t.id}<br>
+                                    📅 Date: ${new Date(t.date).toLocaleString()}<br>
+                                    👤 From: ${escapeHtml(t.from)}<br>
+                                    👤 To: ${escapeHtml(t.to)}<br>
+                                    💰 ${formatCoins(t.amountCoins)} coins<br>
+                                    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                                        <button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
+                                        <button class="icon-btn" onclick="downloadReceipt('${t.id}')">⬇️ Download Receipt</button>
+                                    </div>
+                                </div>
+                            `;
+                    } catch (_) {
+                        document.getElementById('checkResult').innerHTML =
+                            `<div class="tx-check-result">❌ Transaction not found</div>`;
+                    }
+                };
+            } catch (err) {
+                container.innerHTML = `<div class="card-modern" style="color:#ed4245;">❌ Error loading transactions.</div>`;
+            }
+        }
+
+        // ----- CARD (sem criação de bill) -----
+        async function loadCard() {
+            const container = document.getElementById('dynamicContent');
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/card`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, true);
+                const cardCode = data.cardCode || 'N/A';
+                const userId = state.session.userId;
+                const hidden = state.cardCodeHidden;
+
+                container.innerHTML = `
+                        <div class="card-modern" style="text-align:center;">
+                            <div class="bank-card-wrap">
+                                <div class="bank-card">
+                                    <div class="magstripe"></div>
+                                    <div class="card-chip"></div>
+                                    <div class="info">
+                                        <div class="id-value">${escapeHtml(userId)}</div>
+                                        <div class="code-value ${hidden ? 'hidden' : ''}" id="cardCodeDisplay">${escapeHtml(cardCode)}</div>
+                                    </div>
+                                </div>
+                                <div class="card-actions">
+                                    <button class="copy-btn" id="copyCardBtn">Copy Code</button>
+                                    <button class="btn btn-warning" id="resetCardBtn">🔄 Reset</button>
+                                    <div class="toggle-wrap" id="toggleCardCode">
+                                        <span>${hidden ? '👁️ Show' : '🙈 Hide'}</span>
+                                        <div class="toggle-switch ${hidden ? '' : 'active'}" id="toggleSwitch">
+                                            <div class="knob"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                document.getElementById('copyCardBtn').onclick = () => copyText(cardCode);
+
+                document.getElementById('resetCardBtn').onclick = async () => {
+                    try {
+                        await apiRequest(`${getApiBase()}/api/card/reset`, {
+                            method: 'POST',
+                            headers: authHeaders()
+                        }, true);
+                        showToast('Card reset successfully!');
+                        loadCard();
+                    } catch (_) { showToast('Reset failed', 'error'); }
+                };
+
+                const toggleWrap = document.getElementById('toggleCardCode');
+                const toggleSwitch = document.getElementById('toggleSwitch');
+                const codeDisplay = document.getElementById('cardCodeDisplay');
+
+                const updateToggle = () => {
+                    const isHidden = state.cardCodeHidden;
+                    codeDisplay.classList.toggle('hidden', isHidden);
+                    toggleSwitch.classList.toggle('active', !isHidden);
+                    toggleWrap.querySelector('span').textContent = isHidden ? '👁️ Show' : '🙈 Hide';
+                };
+
+                toggleWrap.onclick = () => {
+                    state.cardCodeHidden = !state.cardCodeHidden;
+                    updateToggle();
+                };
+            } catch (err) {
+                container.innerHTML = `<div class="card-modern" style="color:#ed4245;">❌ Error loading card.</div>`;
+            }
+        }
+
+        // ----- BILLS (com criar bill + pagar + listar) -----
+        async function loadBills() {
+            const container = document.getElementById('dynamicContent');
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/bill/list`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ page: 1 })
+                }, true);
+                const toPay = data.toPay || [];
+                const toReceive = data.toReceive || [];
+
+                let html = `
+                        <!-- Criar Bill -->
+                        <div class="card-modern">
+                            <h3>📄 Create Bill</h3>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                <input type="text" id="billAmount" placeholder="Amount (coins)" style="flex:1; margin-bottom:0;">
+                                <input type="text" id="billFromId" placeholder="Debtor ID (who pays)" style="flex:1.5; margin-bottom:0;">
+                            </div>
+                            <button class="btn btn-primary" id="createBillBtn" style="margin-top:0.8rem;">Create Bill</button>
+                        </div>
+
+                        <!-- Pagar Bill -->
+                        <div class="card-modern">
+                            <h3>🧾 Pay Bill by ID</h3>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                                <input type="text" id="payBillId" placeholder="Bill ID" style="flex:1; margin-bottom:0;">
+                                <button class="btn btn-success" id="doPayBillBtn" style="flex-shrink:0;">Pay</button>
+                            </div>
+                        </div>
+
+                        <!-- Listar Bills -->
+                        <div class="card-modern" style="text-align:center;">
+                            <button class="btn btn-primary" id="showToPayBtn" style="margin-right:1rem;">📌 Bills to Pay (${toPay.length})</button>
+                            <button class="btn btn-secondary" id="showToReceiveBtn">📥 Bills to Receive (${toReceive.length})</button>
+                        </div>
+                    `;
+
+                container.innerHTML = html;
+
+                // Create Bill
+                document.getElementById('createBillBtn').onclick = async () => {
+                    const amount = parseFloat(document.getElementById('billAmount').value);
+                    const fromId = document.getElementById('billFromId').value.trim();
+                    if (!amount || !fromId) {
+                        showToast('Fill all fields', 'warning');
+                        return;
+                    }
+                    try {
+                        await apiRequest(`${getApiBase()}/api/bill/create`, {
+                            method: 'POST',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ fromId, toId: state.session.userId, amount })
+                        }, true);
+                        showToast('Bill created!');
+                        loadBills(); // recarrega a lista
+                    } catch (_) { showToast('Creation failed', 'error'); }
+                };
+
+                // Pay Bill
+                document.getElementById('doPayBillBtn').onclick = async () => {
+                    const billId = document.getElementById('payBillId').value.trim();
+                    if (!billId) {
+                        showToast('Enter bill ID', 'warning');
+                        return;
+                    }
+                    try {
+                        await apiRequest(`${getApiBase()}/api/bill/pay`, {
+                            method: 'POST',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ billId })
+                        }, true);
+                        showToast('Bill paid!');
+                        refreshBalanceUI();
+                        loadBills();
+                    } catch (_) { showToast('Payment failed', 'error'); }
+                };
+
+                // Show toPay modal
+                document.getElementById('showToPayBtn').onclick = () => {
+                    let modalHtml = `<h3>🧾 To Pay</h3>`;
+                    if (!toPay.length) modalHtml += `<p>No bills to pay.</p>`;
+                    else {
+                        toPay.forEach(b => {
+                            modalHtml += `
+                                    <div class="bill-item">
+                                        <div class="bill-info">
+                                            ID: ${b.id}<br>
+                                            From: ${escapeHtml(b.from_id)}<br>
+                                            💰 ${formatCoins(b.amount)} coins<br>
+                                            📅 ${new Date(b.date).toLocaleString()}
+                                        </div>
+                                        <div>
+                                            <button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button>
+                                            <button class="btn btn-success" style="margin-left:8px;" onclick="payBillAndClose('${b.id}')">Pay</button>
+                                        </div>
+                                    </div>
+                                `;
+                        });
+                    }
+                    document.getElementById('billsModalTitle').innerText = 'Bills to Pay';
+                    document.getElementById('billsModalBody').innerHTML = modalHtml;
+                    document.getElementById('billsModal').style.display = 'flex';
+                };
+
+                // Show toReceive modal
+                document.getElementById('showToReceiveBtn').onclick = () => {
+                    let modalHtml = `<h3>📥 To Receive</h3>`;
+                    if (!toReceive.length) modalHtml += `<p>No bills to receive.</p>`;
+                    else {
+                        toReceive.forEach(b => {
+                            modalHtml += `
+                                    <div class="bill-item">
+                                        <div class="bill-info">
+                                            ID: ${b.id}<br>
+                                            To: ${escapeHtml(b.to_id)}<br>
+                                            💰 ${formatCoins(b.amount)} coins<br>
+                                            📅 ${new Date(b.date).toLocaleString()}
+                                        </div>
+                                        <div>
+                                            <button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button>
+                                        </div>
+                                    </div>
+                                `;
+                        });
+                    }
+                    document.getElementById('billsModalTitle').innerText = 'Bills to Receive';
+                    document.getElementById('billsModalBody').innerHTML = modalHtml;
+                    document.getElementById('billsModal').style.display = 'flex';
+                };
+            } catch (err) {
+                container.innerHTML = `<div class="card-modern" style="color:#ed4245;">❌ Error loading bills.</div>`;
+            }
+        }
+
+        window.payBillAndClose = async (billId) => {
+            try {
+                await apiRequest(`${getApiBase()}/api/bill/pay`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ billId })
+                }, true);
+                showToast('Bill paid!');
+                refreshBalanceUI();
+                loadBills();
+                closeBillsModal();
+            } catch (_) { showToast('Payment failed', 'error'); }
+        };
+
+        // ----- TRANSFER -----
+        async function loadTransfer() {
+            const container = document.getElementById('dynamicContent');
+            container.innerHTML = `
+                    <div class="card-modern">
+                        <h3>💸 Send Coins</h3>
+                        <input type="text" id="transferToId" placeholder="Recipient ID">
+                        <input type="number" id="transferAmount" step="0.00000001" placeholder="Amount (coins)">
+                        <button class="btn btn-primary" id="doTransferBtn">Transfer</button>
+                    </div>
+                `;
+
+            document.getElementById('doTransferBtn').onclick = async () => {
+                const toId = document.getElementById('transferToId').value.trim();
+                const amount = parseFloat(document.getElementById('transferAmount').value);
+                if (!toId || isNaN(amount) || amount <= 0) {
+                    showToast('Fill valid fields', 'warning');
+                    return;
+                }
+                try {
+                    await apiRequest(`${getApiBase()}/api/transfer`, {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ toId, amount })
+                    }, true);
+                    showToast('Transfer completed!');
+                    refreshBalanceUI();
+                } catch (_) { showToast('Transfer failed', 'error'); }
             };
-        } catch(e) { container.innerHTML = `<div class="card-modern">Error loading card</div>`; }
-    }
+        }
 
-    async function loadBills() {
-        const res = await fetch(`${API}/api/bill/list`, { method:"POST", headers: authHeaders(), body: JSON.stringify({page:1}) });
-        if(!res.ok) return;
-        const { toPay = [], toReceive = [] } = await res.json();
-        // Exibir modais separados: dois botões
-        const container = document.getElementById('dynamicContent');
-        container.innerHTML = `<div class="card-modern" style="text-align:center;">
-            <button class="btn btn-primary" id="showToPayBtn" style="margin-right:1rem;">📌 Bills to Pay (${toPay.length})</button>
-            <button class="btn btn-secondary" id="showToReceiveBtn">📥 Bills to Receive (${toReceive.length})</button>
-        </div>`;
-        document.getElementById('showToPayBtn').onclick = () => {
-            let html = `<h3>🧾 To Pay</h3>`;
-            toPay.forEach(b => {
-                html += `<div class="bill-item"><div>ID: ${b.id}<br>From: ${b.from_id}<br>💰 ${parseFloat(b.amount).toFixed(8)} coins<br>📅 ${new Date(b.date).toLocaleString()}</div>
-                        <div><button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button><button class="btn btn-primary" style="margin-left:8px;" onclick="payBillAndClose('${b.id}')">Pay</button></div></div>`;
-            });
-            document.getElementById('billsModalTitle').innerText = "Bills to Pay";
-            document.getElementById('billsModalBody').innerHTML = html;
-            document.getElementById('billsModal').style.display = 'flex';
-        };
-        document.getElementById('showToReceiveBtn').onclick = () => {
-            let html = `<h3>📥 To Receive</h3>`;
-            toReceive.forEach(b => {
-                html += `<div class="bill-item"><div>ID: ${b.id}<br>To: ${b.to_id}<br>💰 ${parseFloat(b.amount).toFixed(8)} coins<br>📅 ${new Date(b.date).toLocaleString()}</div>
-                        <div><button class="copy-btn" onclick="copyText('${b.id}')">Copy ID</button></div></div>`;
-            });
-            document.getElementById('billsModalTitle').innerText = "Bills to Receive";
-            document.getElementById('billsModalBody').innerHTML = html;
-            document.getElementById('billsModal').style.display = 'flex';
-        };
-    }
-    window.payBillAndClose = async (billId) => {
-        const res = await fetch(`${API}/api/bill/pay`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ billId }) });
-        if(res.ok) { showToast("Bill paid!"); loadBills(); refreshBalanceUI(); closeBillsModal(); } else showToast("Failed", true);
-    };
+        // ----- CLAIM -----
+        async function loadClaim() {
+            const container = document.getElementById('dynamicContent');
+            container.innerHTML = `
+                    <div class="card-modern" style="text-align:center;">
+                        <h3>🎁 Daily Reward</h3>
+                        <button id="claimBtn" class="btn btn-success" disabled>⏳ Loading...</button>
+                        <div id="claimTimer" style="margin-top:12px; font-family:monospace;">--</div>
+                    </div>
+                `;
 
-    async function loadTransfer() { /* igual anterior */ 
-        document.getElementById('dynamicContent').innerHTML = `<div class="card-modern">
-            <h3>💸 Send coins</h3>
-            <input type="text" id="transferToId" placeholder="Recipient ID">
-            <input type="number" id="transferAmount" step="0.00000001" placeholder="Amount (coins)">
-            <button class="btn btn-primary" id="doTransferBtn">Transfer</button>
-            <hr style="margin:20px 0;">
-            <h3>🧾 Pay bill by ID</h3>
-            <input type="text" id="payBillId" placeholder="Bill ID">
-            <button class="btn btn-secondary" id="doPayBillBtn">Pay Bill</button>
-        </div>`;
-        document.getElementById('doTransferBtn').onclick = async () => {
-            const toId = document.getElementById('transferToId').value.trim();
-            const amount = parseFloat(document.getElementById('transferAmount').value);
-            if(!toId || isNaN(amount)) return showToast("Fill fields", true);
-            const res = await fetch(`${API}/api/transfer`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ toId, amount }) });
-            if(res.ok) { showToast("Transfer completed!"); refreshBalanceUI(); } else showToast("Transfer failed", true);
-        };
-        document.getElementById('doPayBillBtn').onclick = async () => {
-            const billId = document.getElementById('payBillId').value.trim();
-            if(!billId) return;
-            const res = await fetch(`${API}/api/bill/pay`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ billId }) });
-            if(res.ok) { showToast("Bill paid!"); refreshBalanceUI(); } else showToast("Error", true);
-        };
-    }
-
-    async function loadCheck() {
-        const container = document.getElementById('dynamicContent');
-        container.innerHTML = `<div class="card-modern">
-            <h3>🔍 Check Transaction</h3>
-            <input type="text" id="checkTxId" placeholder="Transaction ID">
-            <button class="btn btn-primary" id="doCheckTxBtn">Check</button>
-            <div id="checkResult" style="margin-top:1rem;"></div>
-        </div>`;
-        document.getElementById('doCheckTxBtn').onclick = async () => {
-            const txId = document.getElementById('checkTxId').value.trim();
-            if(!txId) return showToast("Enter TX ID", true);
-            const res = await fetch(`${API}/api/tx/${txId}`, { headers: authHeaders() });
-            if(!res.ok) { document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">❌ Transaction not found</div>`; return; }
-            const data = await res.json();
-            if(!data.success) { document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">❌ Invalid transaction</div>`; return; }
-            const t = data.tx;
-            document.getElementById('checkResult').innerHTML = `<div class="tx-check-result">
-                <strong>📄 Transaction Details</strong><br>
-                🆔 ID: ${t.id}<br>
-                📅 Date: ${new Date(t.date).toLocaleString()}<br>
-                👤 From: ${t.from}<br>
-                👤 To: ${t.to}<br>
-                💰 Amount: ${parseFloat(t.amountCoins).toFixed(8)} coins<br>
-                <div style="margin-top:12px; display:flex; gap:8px;">
-                    <button class="copy-btn" onclick="copyText('${t.id}')">Copy ID</button>
-                    <button class="icon-btn" onclick="downloadReceipt('${t.id}')">⬇️ Download Receipt</button>
-                </div>
-            </div>`;
-        };
-    }
-
-    let claimRemaining = 0, claimInterval = null;
-    async function loadClaim() {
-        const container = document.getElementById('dynamicContent');
-        container.innerHTML = `<div class="card-modern" style="text-align:center;"><h3>🎁 Daily reward</h3><button id="claimBtn" class="btn btn-primary" disabled>Waiting</button><div id="claimTimer" style="margin-top:12px;">--</div></div>`;
-        const statusRes = await fetch(`${API}/api/claim/status`, { headers: authHeaders() });
-        if(statusRes.ok) {
-            const { cooldownRemainingMs } = await statusRes.json();
-            claimRemaining = cooldownRemainingMs;
-            const updateUI = () => {
+            const updateClaimUI = (remaining) => {
                 const btn = document.getElementById('claimBtn');
                 const timerDiv = document.getElementById('claimTimer');
-                if(claimRemaining <= 0) {
-                    if(btn) { btn.disabled = false; btn.innerText = "🎁 Claim Now"; }
-                    if(timerDiv) timerDiv.innerText = "Ready!";
-                    if(claimInterval) clearInterval(claimInterval);
+                if (remaining <= 0) {
+                    if (btn) { btn.disabled = false;
+                        btn.innerText = '🎁 Claim Now'; }
+                    if (timerDiv) timerDiv.innerText = '✅ Ready!';
+                    if (state.claimInterval) clearInterval(state.claimInterval);
                 } else {
-                    if(btn) { btn.disabled = true; btn.innerText = "⏳ Cooldown"; }
-                    const secs = Math.floor(claimRemaining/1000);
-                    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
-                    if(timerDiv) timerDiv.innerText = `⏱️ ${h}h ${m}m ${s}s`;
-                    claimRemaining -= 1000;
+                    if (btn) { btn.disabled = true;
+                        btn.innerText = '⏳ Cooldown'; }
+                    const secs = Math.floor(remaining / 1000);
+                    const h = Math.floor(secs / 3600),
+                        m = Math.floor((secs % 3600) / 60),
+                        s = secs % 60;
+                    if (timerDiv) timerDiv.innerText = `⏱️ ${h}h ${m}m ${s}s`;
                 }
             };
-            updateUI();
-            if(claimInterval) clearInterval(claimInterval);
-            claimInterval = setInterval(() => { if(claimRemaining > 0) { claimRemaining -= 1000; updateUI(); } else clearInterval(claimInterval); }, 1000);
-        }
-        document.getElementById('claimBtn').onclick = async () => {
-            const res = await fetch(`${API}/api/claim`, { method:"POST", headers: authHeaders() });
-            const data = await res.json();
-            if(res.ok) { showToast(`🎉 You claimed ${data.claimed} coins!`); refreshBalanceUI(); loadClaim(); } 
-            else if(res.status === 429) showToast("Cooldown active", true);
-            else showToast("Claim failed", true);
-        };
-    }
 
-    async function loadModule(tab) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
-        if(tab === 'dashboard') await renderDashboard();
-        else if(tab === 'transactions') await loadTransactions();
-        else if(tab === 'card') await loadCard();
-        else if(tab === 'bills') await loadBills();
-        else if(tab === 'transfer') await loadTransfer();
-        else if(tab === 'check') await loadCheck();
-        else if(tab === 'claim') await loadClaim();
-    }
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/claim/status`, {
+                    headers: authHeaders()
+                }, true);
+                const remaining = data.cooldownRemainingMs || 0;
+                state.claimRemaining = remaining;
+                updateClaimUI(remaining);
 
-    // ---- Cache de credenciais ----
-    function saveCredential(username, password, userId) {
-        let creds = JSON.parse(localStorage.getItem('coinbank_creds') || '[]');
-        // evitar duplicatas
-        creds = creds.filter(c => c.userId !== userId);
-        creds.unshift({ username, password, userId, lastUsed: Date.now() });
-        if(creds.length > 10) creds.pop();
-        localStorage.setItem('coinbank_creds', JSON.stringify(creds));
-        renderCredentialsList();
-    }
+                if (state.claimInterval) clearInterval(state.claimInterval);
+                if (remaining > 0) {
+                    state.claimInterval = setInterval(() => {
+                        state.claimRemaining -= 1000;
+                        if (state.claimRemaining <= 0) {
+                            clearInterval(state.claimInterval);
+                            state.claimRemaining = 0;
+                        }
+                        updateClaimUI(state.claimRemaining);
+                    }, 1000);
+                }
 
-    function renderCredentialsList() {
-        const creds = JSON.parse(localStorage.getItem('coinbank_creds') || '[]');
-        const container = document.getElementById('credentialsListContainer');
-        if(!container) return;
-        if(creds.length === 0) { container.innerHTML = '<div style="color:#72767d; text-align:center;">No saved accounts</div>'; return; }
-        container.innerHTML = creds.map(c => `
-            <div class="cred-card">
-                <div class="cred-info">👤 ${escapeHtml(c.username)}<br>🆔 ${c.userId}</div>
-                <div style="display:flex; gap:6px;">
-                    <button class="copy-btn" onclick="copyText('${c.userId}')">Copy ID</button>
-                    <button class="icon-btn" onclick="downloadUserCreds('${c.userId}','${escapeHtml(c.username)}')">⬇️</button>
-                    <button class="btn btn-primary" style="padding:2px 10px; font-size:0.65rem;" onclick="quickLogin('${c.username}','${c.password}')">Login</button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    window.downloadUserCreds = downloadUserCreds;
-    window.quickLogin = async (username, password) => {
-        document.getElementById('loginUsername').value = username;
-        document.getElementById('loginPassword').value = password;
-        await performLogin();
-    };
-
-    async function performLogin() {
-        const username = document.getElementById('loginUsername').value;
-        const password = document.getElementById('loginPassword').value;
-        const res = await fetch(`${API}/api/login`, { method:"POST", headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password}) });
-        const data = await res.json();
-        if(data.sessionCreated && data.passwordCorrect) {
-            session = { username, sessionId: data.sessionId, userId: data.userId };
-            localStorage.setItem('session', JSON.stringify(session));
-            saveCredential(username, password, data.userId);
-            document.getElementById('loginRegisterOverlay').style.display = 'none';
-            startApp();
-        } else showToast("Invalid credentials", true);
-    }
-
-    // ---- Configurações e logout ----
-    async function refreshBackupList() {
-        const res = await fetch(`${API}/api/backup/list`, { method:"POST", headers: authHeaders() });
-        if(res.ok) {
-            const { backups } = await res.json();
-            const container = document.getElementById('backupListContainer');
-            container.innerHTML = backups.map(code => `<div class="backup-item"><span class="backup-code">${escapeHtml(code)}</span><button class="copy-btn" onclick="copyText('${code}')">Copy</button></div>`).join('');
-            if(!backups.length) container.innerHTML = '<div style="padding:8px;">No backups</div>';
-        }
-    }
-    window.closeSettingsModal = () => document.getElementById('settingsModal').style.display = 'none';
-    async function doCreateBackup() { await fetch(`${API}/api/backup/create`, { method:"POST", headers: authHeaders() }); showToast("Backup created!"); refreshBackupList(); }
-    async function doRestoreBackup() { const code = document.getElementById('restoreBackupCode').value.trim(); if(!code) return showToast("Enter code", true); const res = await fetch(`${API}/api/backup/restore`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ backupId: code }) }); if(res.ok) { showToast("Restore completed!"); refreshBalanceUI(); refreshBackupList(); } else showToast("Restore failed", true); }
-    async function changeCredentials() { const username = document.getElementById('newUsername').value.trim(); const pass = document.getElementById('newPassword').value; const confirm = document.getElementById('confirmNewPassword').value; if(pass !== confirm) return showToast("Passwords mismatch", true); const res = await fetch(`${API}/api/account/change`, { method:"POST", headers: authHeaders(), body: JSON.stringify({ username: username || undefined, password: pass }) }); if(res.ok) { showToast("Credentials changed! Login again."); doLogout(); } else showToast("Error", true); }
-    async function doUnregister() {
-        showConfirm({
-            title: 'Delete Account',
-            message: 'Are you sure? This action is irreversible.',
-            onConfirm: async () => {
-                await fetch(`${API}/api/account/unregister`, { method:"POST", headers: authHeaders() });
-                doLogout();
+                document.getElementById('claimBtn').onclick = async () => {
+                    try {
+                        const result = await apiRequest(`${getApiBase()}/api/claim`, {
+                            method: 'POST',
+                            headers: authHeaders()
+                        }, true);
+                        showToast(`🎉 You claimed ${result.claimed} coins!`);
+                        refreshBalanceUI();
+                        loadClaim();
+                    } catch (err) {
+                        if (err.message.includes('Cooldown')) {
+                            showToast('Cooldown active', 'warning');
+                            loadClaim();
+                        } else {
+                            showToast('Claim failed', 'error');
+                        }
+                    }
+                };
+            } catch (_) {
+                container.innerHTML =
+                    `<div class="card-modern" style="text-align:center;color:#ed4245;">❌ Error loading claim status.</div>`;
             }
-        });
-    }
-    async function doLogout() { await fetch(`${API}/api/logout`, { method:"POST", headers: authHeaders() }).catch(()=>{}); localStorage.removeItem("session"); window.location.reload(); }
+        }
 
-    function initAuthEvents() {
-        document.getElementById('loginSubmitBtn').onclick = performLogin;
-        document.getElementById('switchToRegisterBtn').onclick = () => { document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; document.getElementById('authModalTitle').innerText="📝 Register"; };
-        document.getElementById('switchToLoginBtn').onclick = () => { document.getElementById('loginForm').style.display='block'; document.getElementById('registerForm').style.display='none'; document.getElementById('authModalTitle').innerText="🔐 Access Account"; };
-        document.getElementById('registerSubmitBtn').onclick = async () => {
-            const user = document.getElementById('regUsername').value;
-            const pass = document.getElementById('regPassword').value;
-            const conf = document.getElementById('regConfirm').value;
-            if(pass !== conf) return showToast("Passwords differ", true);
-            const res = await fetch(`${API}/api/register`, { method:"POST", headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: user, password: pass }) });
-            if(res.ok) { showToast("Account created! Please login."); document.getElementById('switchToLoginBtn').click(); } else showToast("Registration failed", true);
+        // ============================================================
+        //  MODULE DISPATCHER
+        // ============================================================
+        const moduleMap = {
+            transactions: loadTransactions,
+            card: loadCard,
+            bills: loadBills,
+            transfer: loadTransfer,
+            claim: loadClaim,
         };
-        renderCredentialsList();
-    }
 
-    function startApp() {
-        document.getElementById('headerUsername').innerText = session.username;
-        document.getElementById('headerUserId').innerText = session.userId;
-        document.getElementById('copyUserIdHeaderBtn').onclick = () => copyText(session.userId);
-        refreshBalanceUI();
-        setInterval(refreshBalanceUI, 8000);
-        loadModule('dashboard');
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.onclick = () => loadModule(btn.dataset.tab));
-        document.getElementById('openSettingsModalBtn').onclick = async () => { await refreshBackupList(); document.getElementById('settingsModal').style.display = 'flex'; };
-        document.getElementById('doCreateBackupBtn').onclick = doCreateBackup;
-        document.getElementById('doRestoreBackupBtn').onclick = doRestoreBackup;
-        document.getElementById('doChangeCredsBtn').onclick = changeCredentials;
-        document.getElementById('doUnregisterBtn').onclick = doUnregister;
-        document.getElementById('doLogoutBtn').onclick = doLogout;
-    }
+        async function loadModule(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
 
-    function escapeHtml(str) { return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }
-    window.downloadReceipt = downloadReceipt;
-    const stored = localStorage.getItem('session');
-    if(stored) {
-        try {
-            session = JSON.parse(stored);
-            if(session.sessionId) { document.getElementById('loginRegisterOverlay').style.display = 'none'; startApp(); } 
-            else throw new Error();
-        } catch(e) { localStorage.removeItem('session'); initAuthEvents(); }
-    } else initAuthEvents();
-</script>
+            const loader = moduleMap[tab];
+            if (loader) await loader();
+            else showToast('Module not found', 'error');
+        }
+
+        // ============================================================
+        //  SETTINGS / BACKUP
+        // ============================================================
+        async function refreshBackupList() {
+            const container = document.getElementById('backupListContainer');
+            try {
+                const data = await apiRequest(`${getApiBase()}/api/backup/list`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, false);
+                const backups = data.backups || [];
+                if (!backups.length) {
+                    container.innerHTML = '<div style="padding:8px; color:#72767d;">No backups found.</div>';
+                    return;
+                }
+                container.innerHTML = backups.map(code =>
+                    `<div class="backup-item"><span class="backup-code">${escapeHtml(code)}</span><button class="copy-btn" onclick="copyText('${code}')">Copy</button></div>`
+                ).join('');
+            } catch (_) {
+                container.innerHTML = '<div style="padding:8px; color:#ed4245;">Error loading backups.</div>';
+            }
+        }
+
+        async function doCreateBackup() {
+            try {
+                await apiRequest(`${getApiBase()}/api/backup/create`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                }, true);
+                showToast('Backup created!');
+                refreshBackupList();
+            } catch (_) { showToast('Backup creation failed', 'error'); }
+        }
+
+        async function doRestoreBackup() {
+            const code = document.getElementById('restoreBackupCode').value.trim();
+            if (!code) {
+                showToast('Enter a backup code', 'warning');
+                return;
+            }
+            try {
+                await apiRequest(`${getApiBase()}/api/backup/restore`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ backupId: code })
+                }, true);
+                showToast('Restore completed!');
+                refreshBalanceUI();
+                refreshBackupList();
+            } catch (_) { showToast('Restore failed', 'error'); }
+        }
+
+        async function changeCredentials() {
+            const username = document.getElementById('newUsername').value.trim();
+            const pass = document.getElementById('newPassword').value;
+            const confirm = document.getElementById('confirmNewPassword').value;
+            if (pass !== confirm) {
+                showToast('Passwords do not match', 'error');
+                return;
+            }
+            try {
+                await apiRequest(`${getApiBase()}/api/account/change`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ username: username || undefined, password: pass })
+                }, true);
+                showToast('Credentials changed! Please login again.');
+                doLogout();
+            } catch (_) { showToast('Change failed', 'error'); }
+        }
+
+        async function doUnregister() {
+            showConfirm({
+                title: 'Delete Account',
+                message: 'Are you sure? This action is irreversible.',
+                onConfirm: async () => {
+                    try {
+                        await apiRequest(`${getApiBase()}/api/account/unregister`, {
+                            method: 'POST',
+                            headers: authHeaders()
+                        }, true);
+                        doLogout();
+                    } catch (_) { showToast('Deletion failed', 'error'); }
+                }
+            });
+        }
+
+        // ============================================================
+        //  APP INIT
+        // ============================================================
+        function startApp() {
+            const s = state.session;
+            document.getElementById('headerUsername').innerText = s.username;
+            document.getElementById('headerUserId').innerText = s.userId;
+            document.getElementById('copyUserIdHeaderBtn').onclick = () => copyText(s.userId);
+
+            refreshBalanceUI();
+            setInterval(refreshBalanceUI, 10000);
+
+            loadModule('transactions');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.onclick = () => loadModule(btn.dataset.tab);
+            });
+
+            document.getElementById('openSettingsModalBtn').onclick = async () => {
+                await refreshBackupList();
+                document.getElementById('settingsModal').style.display = 'flex';
+            };
+            document.getElementById('doCreateBackupBtn').onclick = doCreateBackup;
+            document.getElementById('doRestoreBackupBtn').onclick = doRestoreBackup;
+            document.getElementById('doChangeCredsBtn').onclick = changeCredentials;
+            document.getElementById('doUnregisterBtn').onclick = doUnregister;
+            document.getElementById('doLogoutBtn').onclick = doLogout;
+        }
+
+        // ============================================================
+        //  AUTH INIT
+        // ============================================================
+        function initAuth() {
+            document.getElementById('loginSubmitBtn').onclick = performLogin;
+            document.getElementById('switchToRegisterBtn').onclick = () => {
+                document.getElementById('loginForm').style.display = 'none';
+                document.getElementById('registerForm').style.display = 'block';
+                document.getElementById('authModalTitle').innerText = '📝 Register';
+            };
+            document.getElementById('switchToLoginBtn').onclick = () => {
+                document.getElementById('loginForm').style.display = 'block';
+                document.getElementById('registerForm').style.display = 'none';
+                document.getElementById('authModalTitle').innerText = '🔐 Access Account';
+            };
+            document.getElementById('registerSubmitBtn').onclick = performRegister;
+            renderCredentialsList();
+        }
+
+        // ============================================================
+        //  BOOT
+        // ============================================================
+        (function boot() {
+            const stored = localStorage.getItem('session');
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (parsed.sessionId) {
+                        state.session = parsed;
+                        document.getElementById('loginRegisterOverlay').style.display = 'none';
+                        startApp();
+                        return;
+                    }
+                } catch (_) {}
+                localStorage.removeItem('session');
+            }
+            initAuth();
+            document.getElementById('loginRegisterOverlay').style.display = 'flex';
+        })();
+
+        // Expose helpers globally
+        window.copyText = copyText;
+        window.downloadReceipt = downloadReceipt;
+        window.downloadUserCreds = downloadUserCreds;
+        window.payBillAndClose = payBillAndClose;
+        window.closeConfirmModal = closeConfirmModal;
+        window.closeBillsModal = closeBillsModal;
+        window.closeSettingsModal = closeSettingsModal;
+        window.showToast = showToast;
+    </script>
 </body>
 </html>
