@@ -26,7 +26,10 @@ module.exports = {
     // 4️⃣ Send the new card code
     try {
       await interaction.editReply({
-        content: `♻️ Your card was regenerated: ||\`\`\`${code}\`\`\`||`
+        content: `
+        ♻️ Your card was regenerated: ||\`\`\`${code}\`\`\`||
+        ♻️ Click: ||\`${code}\`||
+        `
       });
     } catch (err) {
       console.error('❌ [/cardreset] Failed to send response:', err);

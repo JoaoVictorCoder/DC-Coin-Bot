@@ -23,7 +23,10 @@ module.exports = {
 
       // 3) Envia resposta
       return interaction.editReply({
-        content: `💳 Your Card: ||\`\`\`${code}\`\`\`||`
+        content: `
+        💳 Your Card: ||\`\`\`${code}\`\`\`||
+        💳 Click: ||\`${code}\`||
+        `
       });
 
     } catch (err) {
